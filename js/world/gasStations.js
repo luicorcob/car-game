@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import { CONFIG } from "../config.js";
 import {
-  dirVector,
   rightVectorFromDir,
   normalizeAngle
 } from "./math.js";
@@ -10,10 +9,23 @@ function headingFromDelta(dx, dz) {
   return Math.atan2(dx, -dz);
 }
 
+function forwardFromHeading(heading) {
+  return {
+    x: Math.sin(heading),
+    z: -Math.cos(heading)
+  };
+}
+
 function distanceSq(a, b) {
   const dx = a.x - b.x;
   const dz = a.z - b.z;
   return dx * dx + dz * dz;
+}
+
+function minHeadingDelta(a, b) {
+  const d1 = Math.abs(normalizeAngle(a - b));
+  const d2 = Math.abs(normalizeAngle(a - (b + Math.PI)));
+  return Math.min(d1, d2);
 }
 
 function createRoadsidePoint(graph, roadSegment, s, dir, side, lateralOffset) {
@@ -281,6 +293,15 @@ export function createGasStationController(scene, graph) {
 
   const stationDefs = [
     {
+      id: "station_spawn_right",
+      brand: "ROAD FUEL",
+      fromNodeId: `0,${2 * step}`,
+      dir: "N",
+      side: 1,
+      entryS: 78,
+      exitS: 150
+    },
+    {
       id: "station_top_west",
       brand: "PETROX",
       fromNodeId: `${-2 * step},${-2 * step}`,
@@ -333,7 +354,6 @@ export function createGasStationController(scene, graph) {
     const side = def.side;
     const dir = def.dir;
     const accessLaneOffset = side > 0 ? laneMax : laneMin;
-
     const midS = (def.entryS + def.exitS) * 0.5;
 
     const curbIn = createRoadsidePoint(
@@ -469,6 +489,11 @@ export function createGasStationController(scene, graph) {
       }
     ];
 
+    const triggerCenter = {
+      x: (curbIn.x + bayEntry.x) * 0.5,
+      z: (curbIn.z + bayEntry.z) * 0.5
+    };
+
     const stopSegment = buildPathSegment(
       "gas-stop",
       def.id,
@@ -506,6 +531,7 @@ export function createGasStationController(scene, graph) {
       canopyPillars,
       pumpPositions,
       drivewayVisuals,
+      triggerCenter,
       curbIn,
       bayEntry,
       stopStart,
@@ -518,7 +544,6 @@ export function createGasStationController(scene, graph) {
     };
 
     registerReservedArea(apronCenter.x, apronCenter.z, 30);
-
     return station;
   }
 
@@ -535,49 +560,65 @@ export function createGasStationController(scene, graph) {
     }
   }
 
+  function isInsideEntryTrigger(playerPose, station) {
+    const forward = forwardFromHeading(station.approachHeading);
+    const right = rightVectorFromDir(station.dir);
+
+    const dx = playerPose.x - station.triggerCenter.x;
+    const dz = playerPose.z - station.triggerCenter.z;
+
+    const localForward = dx * forward.x + dz * forward.z;
+    const localRight = dx * right.x + dz * right.y;
+
+    return (
+      Math.abs(localForward) <= 18 &&
+      Math.abs(localRight) <= 12
+    );
+  }
+
   function getCandidateScore(playerPose, station) {
-    const dA = distanceSq(playerPose, station.curbIn);
-    const dB = distanceSq(playerPose, station.bayEntry);
-    return Math.min(dA, dB);
+    const d0 = distanceSq(playerPose, station.triggerCenter);
+    const d1 = distanceSq(playerPose, station.curbIn);
+    const d2 = distanceSq(playerPose, station.bayEntry);
+    return Math.min(d0, d1, d2);
   }
 
   function getAvailableAccess(playerPose, segment, s, laneOffset, speed) {
-    if (!playerPose || !segment || segment.type !== "road") return null;
-    if (speed > CONFIG.fuel.stationEnterSpeedMax + 0.04) return null;
+    if (!playerPose) return null;
+    if (speed > CONFIG.fuel.stationEnterSpeedMax + 0.1) return null;
 
     let best = null;
     let bestScore = Infinity;
 
     for (const station of stations) {
-      if (segment.dir !== station.dir) continue;
+      const dTrigger = distanceSq(playerPose, station.triggerCenter);
+      const dCurb = distanceSq(playerPose, station.curbIn);
+      const dApron = distanceSq(playerPose, station.apronCenter);
 
-      const headingDelta = Math.abs(
-        normalizeAngle(playerPose.heading - station.approachHeading)
+      const nearEnough =
+        dTrigger < 28 * 28 ||
+        dCurb < 28 * 28 ||
+        dApron < 40 * 40;
+
+      if (!nearEnough) continue;
+
+      const headingDelta = minHeadingDelta(
+        playerPose.heading,
+        station.approachHeading
       );
-      if (headingDelta > 0.72) continue;
 
-      const nearByS =
-        Math.abs(s - station.entryS) <= CONFIG.fuel.entryWindowHalfSize + 22;
+      const headingOk = headingDelta < 1.15 || dTrigger < 10 * 10;
+      if (!headingOk) continue;
 
-      const nearByWorld =
-        distanceSq(playerPose, station.curbIn) < 34 * 34 ||
-        distanceSq(playerPose, station.bayEntry) < 42 * 42;
+      const triggerOk =
+        isInsideEntryTrigger(playerPose, station) ||
+        dCurb < 16 * 16 ||
+        dTrigger < 14 * 14;
 
-      if (!nearByS && !nearByWorld) continue;
-
-      const roadCenterPose = graph.evaluateSegment(station.road, station.entryS, 0);
-      const right = rightVectorFromDir(station.dir);
-
-      const dx = playerPose.x - roadCenterPose.x;
-      const dz = playerPose.z - roadCenterPose.z;
-      const lateral = dx * right.x + dz * right.y;
-
-      const sideAlignedWorld = lateral * station.side;
-      const sideAlignedLane = laneOffset * station.side;
-
-      if (sideAlignedWorld < 0.65 && sideAlignedLane < 0.65) continue;
+      if (!triggerOk) continue;
 
       const score = getCandidateScore(playerPose, station);
+
       if (score < bestScore) {
         bestScore = score;
         best = {
@@ -595,8 +636,8 @@ export function createGasStationController(scene, graph) {
     if (!station) return null;
 
     const headingPoint = {
-      x: playerPose.x + Math.sin(playerPose.heading) * 4.4,
-      z: playerPose.z - Math.cos(playerPose.heading) * 4.4
+      x: playerPose.x + Math.sin(playerPose.heading) * 4.8,
+      z: playerPose.z - Math.cos(playerPose.heading) * 4.8
     };
 
     return buildPathSegment(
