@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Juego 3D de Coches</title>
+  <link rel="stylesheet" href="./css/styles.css" />
+
+  <!-- Soporte para import maps -->
+  <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
+  <!-- Importamos Three.js como módulo -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="ui">
+    <div class="panel info">
+      <h1>Road Driver 3D</h1>
+      <p><strong>Controles:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
+      <p><strong>Objetivo:</strong> aguanta lo máximo sin chocar.</p>
+    </div>
+
+    <div class="panel hud">
+      <div>Velocidad: <span id="speed">0</span> km/h</div>
+      <div>Puntuación: <span id="score">0</span></div>
+      <div>Estado: <span id="status">Jugando</span></div>
+    </div>
+  </div>
+
+  <div id="game-over" class="panel game-over hidden">
+    <h2>Has chocado</h2>
+    <p>Pulsa <strong>R</strong> para reiniciar</p>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
