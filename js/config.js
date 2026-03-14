@@ -20,10 +20,52 @@ export const CONFIG = {
     collisionRadiusZ: 2.4
   },
 
+  onFoot: {
+    walkSpeed: 0.145,
+    runSpeed: 0.235,
+    acceleration: 11.5,
+    airControl: 3.6,
+    drag: 10.2,
+
+    jumpVelocity: 0.23,
+    gravity: 0.0145,
+
+    radius: 0.58,
+    height: 1.72,
+    turnSpeed: 12,
+
+    enterVehicleDistance: 3.4,
+    exitVehicleMaxSpeed: 0.035,
+    exitOffsetSide: 2.15,
+    exitOffsetForward: 0.24,
+
+    hitboxRadius: 0.62
+  },
+
   camera: {
     height: 6.2,
     followDistance: 14,
     lookAhead: 16,
+    lookHeight: 1.4,
+
+    serviceHeight: 3.2,
+    serviceFollowDistance: 8.4,
+    serviceLookAhead: 9.5,
+    serviceLookHeight: 1.18,
+    serviceSideOffset: 2.2,
+    serviceSideOffsetRefuel: 3.2,
+
+    walkHeight: 3.7,
+    walkFollowDistance: 6.2,
+    walkLookAhead: 4.9,
+    walkLookHeight: 1.3,
+    walkSideOffset: 0.48,
+
+    firstPersonPositionDamping: 18,
+    firstPersonLookDamping: 20,
+    drivingFirstPersonLookDistance: 28,
+    walkingFirstPersonLookDistance: 12,
+
     positionDamping: 8,
     lookDamping: 10
   },
@@ -72,6 +114,17 @@ export const CONFIG = {
     serviceLaneMaxSpeed: 0.18,
     stationEnterSpeedMax: 0.34,
     entryWindowHalfSize: 14
+  },
+
+  pizzaDelivery: {
+    pickupRadius: 2.3,
+    deliveryRadius: 2.85,
+    reward: 10
+  },
+
+  minimap: {
+    extent: 620,
+    size: 220
   },
 
   carVisuals: {

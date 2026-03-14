@@ -21,6 +21,21 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     return hooks.isReservedArea(x, z, padding);
   }
 
+  function registerBoxCollider(x, z, width, depth, meta = {}) {
+    if (!hooks.registerBoxCollider) return;
+    hooks.registerBoxCollider(x, z, width, depth, meta);
+  }
+
+  function registerCircleCollider(x, z, radius, meta = {}) {
+    if (!hooks.registerCircleCollider) return;
+    hooks.registerCircleCollider(x, z, radius, meta);
+  }
+
+  function canPlaceBuilding(x, z, w, d) {
+    const radius = Math.max(w, d) * 0.82;
+    return !isReserved(x, z, radius);
+  }
+
   function populateBlocks() {
     for (let ix = 0; ix < coords.length - 1; ix++) {
       for (let iz = 0; iz < coords.length - 1; iz++) {
@@ -77,6 +92,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         ];
 
         allBuildings.forEach((b, idx) => {
+          if (!canPlaceBuilding(b.x, b.z, b.w, b.d)) return;
+
           const building = createBuilding(
             seedBase + idx * 17,
             b.w,
@@ -86,6 +103,15 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
           );
           building.position.set(b.x, 0, b.z);
           scene.add(building);
+
+          const rotated = Math.abs(Math.sin(b.rot)) > 0.5;
+          registerBoxCollider(
+            b.x,
+            b.z,
+            rotated ? b.d : b.w,
+            rotated ? b.w : b.d,
+            { tag: "decor-building" }
+          );
         });
 
         for (let i = 0; i < 4; i++) {
@@ -164,6 +190,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       dummy.scale.setScalar(1 + (i % 4) * 0.08);
       dummy.updateMatrix();
       crowns.setMatrixAt(i, dummy.matrix);
+
+      registerCircleCollider(p.x, p.z, 1.05, { tag: "decor-tree" });
     });
 
     scene.add(trunks, crowns);
@@ -222,15 +250,21 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         let x = 0;
         let z = 0;
         let rotY = 0;
+        let width = 2.5;
+        let depth = 4.9;
 
         if (road.horizontal) {
           x = road.x + along;
           z = road.z + curbOffset * side;
           rotY = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+          width = 4.9;
+          depth = 2.5;
         } else {
           x = road.x + curbOffset * side;
           z = road.z + along;
           rotY = side > 0 ? Math.PI : 0;
+          width = 2.5;
+          depth = 4.9;
         }
 
         if (isReserved(x, z, 4.5)) continue;
@@ -241,6 +275,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
         parkedCars.push(car);
         scene.add(car);
+        registerBoxCollider(x, z, width, depth, { tag: "decor-parked-car" });
         created++;
       }
     }
@@ -291,9 +326,13 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       const ped = createPedestrian(2000 + i * 7);
       ped.group.position.copy(start);
       ped.group.rotation.y = heading;
+      ped.group.visible = true;
       scene.add(ped.group);
 
       movingPedestrians.push({
+        id: `mp_${i}`,
+        alive: true,
+        radius: 0.42,
         ...ped,
         start,
         end,
@@ -341,7 +380,12 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         ped.legRight.rotation.x = -legPose * 0.75;
 
         scene.add(ped.group);
-        staticPedestrians.push(ped);
+        staticPedestrians.push({
+          id: `sp_${created}`,
+          alive: true,
+          radius: 0.42,
+          ...ped
+        });
         created++;
       }
     }
@@ -357,6 +401,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
   function updateDecorations(dt) {
     for (const ped of movingPedestrians) {
+      if (!ped.alive) continue;
+
       ped.t += ped.dir * ped.speed * dt;
 
       if (ped.t > 1) {
@@ -384,8 +430,50 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     }
   }
 
+  function getPedestrianTargets() {
+    const targets = [];
+
+    for (const ped of movingPedestrians) {
+      if (!ped.alive || !ped.group.visible) continue;
+      targets.push({
+        id: ped.id,
+        x: ped.group.position.x,
+        z: ped.group.position.z,
+        radius: ped.radius
+      });
+    }
+
+    for (const ped of staticPedestrians) {
+      if (!ped.alive || !ped.group.visible) continue;
+      targets.push({
+        id: ped.id,
+        x: ped.group.position.x,
+        z: ped.group.position.z,
+        radius: ped.radius
+      });
+    }
+
+    return targets;
+  }
+
+  function destroyPedestrian(id) {
+    const all = [...movingPedestrians, ...staticPedestrians];
+    const ped = all.find((entry) => entry.id === id);
+    if (!ped || !ped.alive) return null;
+
+    ped.alive = false;
+    ped.group.visible = false;
+
+    return {
+      x: ped.group.position.x,
+      z: ped.group.position.z
+    };
+  }
+
   return {
     build,
-    updateDecorations
+    updateDecorations,
+    getPedestrianTargets,
+    destroyPedestrian
   };
 }

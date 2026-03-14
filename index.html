@@ -6,10 +6,8 @@
   <title>Juego 3D de Coches</title>
   <link rel="stylesheet" href="./css/styles.css" />
 
-  <!-- Soporte para import maps -->
   <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
 
-  <!-- Importamos Three.js como módulo -->
   <script type="importmap">
     {
       "imports": {
@@ -23,19 +21,77 @@
   <div id="ui">
     <div class="panel info">
       <h1>Road Driver 3D</h1>
-      <p><strong>Controles:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
-      <p><strong>Objetivo:</strong> aguanta lo máximo sin chocar.</p>
+      <p><strong>Coche:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
+      <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar.</p>
+      <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
+      <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
+      <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
     </div>
 
     <div class="panel hud">
       <div>Velocidad: <span id="speed">0</span> km/h</div>
       <div>Puntuación: <span id="score">0</span></div>
+      <div>Dinero: <span id="money">$0</span></div>
+      <div>Vista: <span id="camera-mode">3ª persona</span></div>
       <div>Estado: <span id="status">Jugando</span></div>
     </div>
   </div>
 
+  <div id="mission-card" class="panel mission-card">
+    <div class="mission-kicker">MISIÓN</div>
+    <div id="mission-title" class="mission-title">Pizzería Vesuvio</div>
+    <div id="mission-objective" class="mission-objective">Entra en la pizzería y recoge un pedido en la barra</div>
+    <div class="mission-footer">
+      <span id="mission-meta">Sin pedido</span>
+      <span id="mission-count">0 entregas</span>
+    </div>
+  </div>
+
+  <div id="fuel-card" class="panel fuel-card normal">
+    <div class="fuel-header">
+      <span class="fuel-title">FUEL</span>
+      <span id="fuel-percent" class="fuel-percent">100%</span>
+    </div>
+
+    <div class="fuel-bar-shell">
+      <div id="fuel-bar-fill" class="fuel-bar-fill"></div>
+    </div>
+
+    <div class="fuel-meta">
+      <span id="fuel-liters">100.0 L</span>
+      <span id="fuel-state">Óptimo</span>
+    </div>
+  </div>
+
+  <div id="weapon-card" class="panel weapon-card">
+    <div class="weapon-kicker">ARMAMENTO</div>
+    <div id="weapon-name" class="weapon-name">Sin arma</div>
+    <div id="weapon-ammo" class="weapon-ammo">Sin equipar</div>
+    <div id="weapon-state" class="weapon-state">Compra en Armería Atlas</div>
+  </div>
+
+  <div id="nav-map-card" class="panel nav-map-card">
+    <div class="nav-map-header">
+      <span id="nav-map-title">Mapa de ciudad</span>
+      <span id="nav-map-state">Pizzería Vesuvio</span>
+    </div>
+
+    <div class="nav-map-view">
+      <svg id="nav-map-svg" class="nav-map-svg" width="220" height="220">
+        <line id="nav-route" class="map-route hidden" x1="0" y1="0" x2="0" y2="0"></line>
+      </svg>
+
+      <div id="nav-pizzeria" class="map-marker pizzeria"></div>
+      <div id="nav-target" class="map-marker target hidden"></div>
+      <div id="nav-car" class="map-marker car hidden"></div>
+      <div id="nav-player" class="map-marker player"></div>
+    </div>
+  </div>
+
+  <div id="prompt" class="prompt hidden"></div>
+
   <div id="game-over" class="panel game-over hidden">
-    <h2>Has chocado</h2>
+    <h2>Fin</h2>
     <p>Pulsa <strong>R</strong> para reiniciar</p>
   </div>
 

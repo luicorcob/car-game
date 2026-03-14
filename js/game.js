@@ -1,6 +1,14 @@
 import * as THREE from "three";
 import { CONFIG } from "./config.js";
-import { createTrafficCar, createTrafficTruck } from "./car.js";
+import {
+  createTrafficCar,
+  createTrafficTruck,
+  setVehicleWreckState
+} from "./car.js";
+import { createCharacterController } from "./player/characterController.js";
+import { createDestructionController } from "./effects/destruction.js";
+import { createPizzaDeliveryController } from "./missions/pizzaDelivery.js";
+import { createWeaponController } from "./combat/weapons.js";
 
 const TRAFFIC_COLORS = [
   0x3366ff,
@@ -70,6 +78,15 @@ function sameLogicalSegment(a, b) {
   }
 
   return false;
+}
+
+function isInteractPressed(input) {
+  return !!(
+    input?.interact ||
+    input?.use ||
+    input?.keyE ||
+    input?.e
+  );
 }
 
 function advanceVehicleAlongGraph(vehicle, distance, world, chooseTurn) {
@@ -156,8 +173,12 @@ function localizePoint(point, origin, heading) {
   };
 }
 
-export function createGame(scene, playerCar, world) {
+export function createGame(scene, playerCar, playerCharacter, world) {
   const traffic = [];
+  const character = createCharacterController(world);
+  const destruction = createDestructionController(scene);
+  const pizzaDelivery = createPizzaDeliveryController(world);
+  const weapons = createWeaponController();
 
   const player = {
     segment: null,
@@ -177,8 +198,12 @@ export function createGame(scene, playerCar, world) {
   const targetEuler = new THREE.Euler();
 
   let score = 0;
+  let money = 0;
   let gameOver = false;
   let prevInteract = false;
+  let playerMode = "driving";
+  let failureLabel = "Chocado";
+  let characterDestroyed = false;
 
   function createTrafficVehicle({
     type,
@@ -216,7 +241,8 @@ export function createGame(scene, playerCar, world) {
       speed: desiredSpeed,
       collisionRadiusX,
       collisionRadiusZ,
-      canLeaveGasStop: true
+      canLeaveGasStop: true,
+      wrecked: false
     };
   }
 
@@ -297,6 +323,10 @@ export function createGame(scene, playerCar, world) {
     }
     traffic.length = 0;
 
+    destruction.reset();
+    pizzaDelivery.reset();
+    weapons.reset();
+
     player.segment = world.getStartRoad();
     player.segmentS = 0;
     player.laneOffset = 0;
@@ -311,9 +341,16 @@ export function createGame(scene, playerCar, world) {
     playerCar.position.set(player.pose.x, 0, player.pose.z);
     playerCar.rotation.set(0, Math.PI, 0);
 
+    character.setPose(player.pose.x, player.pose.z, player.pose.heading);
+    playerCharacter.visible = false;
+
     score = 0;
+    money = 1000;
     gameOver = false;
     prevInteract = false;
+    playerMode = "driving";
+    failureLabel = "Chocado";
+    characterDestroyed = false;
 
     spawnTraffic();
   }
@@ -321,6 +358,7 @@ export function createGame(scene, playerCar, world) {
   function getGasStationAccess() {
     if (!player.segment || gameOver) return null;
     if (world.isGasStationSegment(player.segment)) return null;
+    if (playerMode !== "driving") return null;
 
     return world.getGasStationAccess(
       player.pose,
@@ -332,14 +370,19 @@ export function createGame(scene, playerCar, world) {
   }
 
   function tryEnterGasStation(input) {
-    const justPressed = input.interact && !prevInteract;
+    const interactPressed = isInteractPressed(input);
+    const justPressed = interactPressed && !prevInteract;
     if (!justPressed) return null;
+    if (playerMode !== "driving") return null;
 
     const access = getGasStationAccess();
     if (!access) return null;
 
     const entrySegment = world.createGasStationEntrySegment(
       player.pose,
+      player.segment,
+      player.segmentS,
+      player.laneOffset,
       access.stationId
     );
 
@@ -360,7 +403,117 @@ export function createGame(scene, playerCar, world) {
     return access;
   }
 
-  function updatePlayerInput(input, dt) {
+  function canExitVehicle() {
+    return (
+      playerMode === "driving" &&
+      !gameOver &&
+      player.speed <= CONFIG.onFoot.exitVehicleMaxSpeed
+    );
+  }
+
+  function getPlayerVehicleBlocker() {
+    return {
+      type: "circle",
+      x: player.pose.x,
+      z: player.pose.z,
+      radius: 2.75
+    };
+  }
+
+  function buildExitCandidates() {
+    const heading = player.pose.heading;
+    const rightX = Math.cos(heading);
+    const rightZ = Math.sin(heading);
+    const forwardX = Math.sin(heading);
+    const forwardZ = -Math.cos(heading);
+
+    const sides = [-1, 1];
+    const candidates = [];
+
+    for (const side of sides) {
+      const raw = {
+        x:
+          player.pose.x +
+          rightX * side * CONFIG.onFoot.exitOffsetSide +
+          forwardX * CONFIG.onFoot.exitOffsetForward,
+        z:
+          player.pose.z +
+          rightZ * side * CONFIG.onFoot.exitOffsetSide +
+          forwardZ * CONFIG.onFoot.exitOffsetForward
+      };
+
+      const resolved = world.resolveCharacterMotion(
+        raw,
+        CONFIG.onFoot.radius,
+        raw.x,
+        raw.z,
+        [getPlayerVehicleBlocker()]
+      );
+
+      const dx = resolved.x - player.pose.x;
+      const dz = resolved.z - player.pose.z;
+
+      candidates.push({
+        x: resolved.x,
+        z: resolved.z,
+        score: dx * dx + dz * dz
+      });
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates;
+  }
+
+  function tryExitVehicle(input) {
+    const interactPressed = isInteractPressed(input);
+    const justPressed = interactPressed && !prevInteract;
+
+    if (!justPressed || !canExitVehicle()) return false;
+
+    const gasAccess = getGasStationAccess();
+    if (gasAccess) return false;
+
+    const candidates = buildExitCandidates();
+    const best = candidates[0];
+    if (!best) return false;
+
+    player.speed = 0;
+    player.laneVelocity = 0;
+    playerMode = "walking";
+    characterDestroyed = false;
+
+    character.setPose(best.x, best.z, player.pose.heading);
+    playerCharacter.visible = true;
+
+    return true;
+  }
+
+  function canEnterVehicle(characterState) {
+    if (playerMode !== "walking") return false;
+    if (gameOver) return false;
+    if (!characterState.onGround) return false;
+
+    const dx = characterState.x - player.pose.x;
+    const dz = characterState.z - player.pose.z;
+    const dist = Math.hypot(dx, dz);
+
+    return dist <= CONFIG.onFoot.enterVehicleDistance;
+  }
+
+  function tryEnterVehicleFromFoot(input, characterState) {
+    const interactPressed = isInteractPressed(input);
+    const justPressed = interactPressed && !prevInteract;
+
+    if (!justPressed) return false;
+    if (!canEnterVehicle(characterState)) return false;
+
+    playerMode = "driving";
+    playerCharacter.visible = false;
+    characterDestroyed = false;
+    return true;
+  }
+
+  function updateDrivingInput(input, dt) {
     if (gameOver) return;
 
     const onGasSegment = world.isGasStationSegment(player.segment);
@@ -450,7 +603,7 @@ export function createGame(scene, playerCar, world) {
     }
   }
 
-  function updatePlayer(dt) {
+  function updateDrivingPlayer(dt) {
     const moveDistance = player.speed * dt * 60;
 
     advanceVehicleAlongGraph(player, moveDistance, world, (segment) => {
@@ -483,12 +636,12 @@ export function createGame(scene, playerCar, world) {
     playerCar.quaternion.slerp(targetQuat, 0.18);
 
     score += player.speed * 10;
-
     return moveDistance;
   }
 
   function updateFuel(dt, input, moveDistance) {
     if (gameOver) return;
+    if (playerMode !== "driving") return;
     if (player.isRefueling) return;
     if (world.isGasStationSegment(player.segment)) return;
 
@@ -572,6 +725,8 @@ export function createGame(scene, playerCar, world) {
 
   function updateTraffic(dt) {
     for (const car of traffic) {
+      if (car.wrecked) continue;
+
       const targetSpeed = getTrafficTargetSpeed(car);
       car.speed += (targetSpeed - car.speed) * Math.min(1, dt * 3.2);
 
@@ -588,10 +743,93 @@ export function createGame(scene, playerCar, world) {
     }
   }
 
-  function checkCollisions() {
+  function triggerVehicleImpact(otherVehicle, playerLocal, otherLocal, otherPose) {
+    if (gameOver) return;
+
+    gameOver = true;
+    failureLabel = "Impacto total";
+    player.speed = 0;
+
+    otherVehicle.speed = 0;
+    otherVehicle.wrecked = true;
+
+    setVehicleWreckState(playerCar, {
+      impactX: playerLocal.x,
+      impactZ: playerLocal.z,
+      intensity: 1.18
+    });
+
+    setVehicleWreckState(otherVehicle.mesh, {
+      impactX: otherLocal.x,
+      impactZ: otherLocal.z,
+      intensity: 1.05
+    });
+
+    const playerForward = new THREE.Vector3(
+      Math.sin(player.pose.heading),
+      0,
+      -Math.cos(player.pose.heading)
+    );
+
+    const otherForward = new THREE.Vector3(
+      Math.sin(otherPose.heading),
+      0,
+      -Math.cos(otherPose.heading)
+    );
+
+    destruction.triggerVehicleCrash(playerCar, {
+      intensity: 1.24,
+      forward: playerForward
+    });
+
+    destruction.triggerVehicleCrash(otherVehicle.mesh, {
+      intensity: 1.06,
+      forward: otherForward
+    });
+  }
+
+  function triggerPedestrianImpact(hitVehicle, hitPose, characterState) {
+    if (gameOver) return;
+
+    gameOver = true;
+    failureLabel = "Atropellado";
+    characterDestroyed = true;
+    playerCharacter.visible = false;
+
+    hitVehicle.speed = 0;
+    hitVehicle.wrecked = true;
+
+    setVehicleWreckState(hitVehicle.mesh, {
+      impactX: 0,
+      impactZ: 1,
+      intensity: 0.88
+    });
+
+    const hitForward = new THREE.Vector3(
+      Math.sin(hitPose.heading),
+      0,
+      -Math.cos(hitPose.heading)
+    );
+
+    destruction.triggerVehicleCrash(hitVehicle.mesh, {
+      intensity: 0.9,
+      forward: hitForward,
+      height: 0.92
+    });
+
+    destruction.triggerPedestrianHit(
+      { x: characterState.x, z: characterState.z },
+      hitPose.heading,
+      Math.max(0.95, hitVehicle.speed * 5.4)
+    );
+  }
+
+  function checkDrivingCollisions() {
     const playerOrigin = { x: player.pose.x, z: player.pose.z };
 
     for (const car of traffic) {
+      if (car.wrecked) continue;
+
       const local = localizePoint(
         { x: car.mesh.position.x, z: car.mesh.position.z },
         playerOrigin,
@@ -604,11 +842,154 @@ export function createGame(scene, playerCar, world) {
         Math.abs(local.z) <
           CONFIG.player.collisionRadiusZ + car.collisionRadiusZ
       ) {
-        gameOver = true;
-        player.speed = 0;
+        const otherPose = getVehiclePose(car, world);
+        const otherLocal = localizePoint(
+          { x: player.pose.x, z: player.pose.z },
+          { x: otherPose.x, z: otherPose.z },
+          otherPose.heading
+        );
+
+        triggerVehicleImpact(car, local, otherLocal, otherPose);
         break;
       }
     }
+  }
+
+  function checkPedestrianTrafficCollisions(characterState) {
+    for (const car of traffic) {
+      if (car.wrecked) continue;
+
+      const pose = getVehiclePose(car, world);
+
+      const local = localizePoint(
+        { x: characterState.x, z: characterState.z },
+        { x: pose.x, z: pose.z },
+        pose.heading
+      );
+
+      if (
+        Math.abs(local.x) <
+          CONFIG.onFoot.hitboxRadius + car.collisionRadiusX &&
+        Math.abs(local.z) <
+          CONFIG.onFoot.hitboxRadius + car.collisionRadiusZ
+      ) {
+        triggerPedestrianImpact(car, pose, characterState);
+        break;
+      }
+    }
+  }
+
+  function triggerShotOnVehicle(vehicle, shot, lateral, pose) {
+    vehicle.speed = 0;
+    vehicle.wrecked = true;
+
+    setVehicleWreckState(vehicle.mesh, {
+      impactX: lateral,
+      impactZ: 1,
+      intensity: shot.weaponId === "shotgun" ? 1.18 : 0.98
+    });
+
+    const forward = new THREE.Vector3(
+      Math.sin(pose.heading),
+      0,
+      -Math.cos(pose.heading)
+    );
+
+    destruction.triggerVehicleCrash(vehicle.mesh, {
+      intensity: shot.weaponId === "shotgun" ? 1.28 : 1.02,
+      forward,
+      height: 0.95
+    });
+  }
+
+  function triggerShotOnPedestrian(hit) {
+    const removed = world.destroyPedestrian(hit.id);
+    if (!removed) return;
+
+    destruction.triggerPedestrianHit(
+      removed,
+      hit.heading,
+      hit.intensity
+    );
+  }
+
+  function fireWeapon(shot, characterState) {
+    const heading = characterState.heading;
+    const forwardX = Math.sin(heading);
+    const forwardZ = -Math.cos(heading);
+    const rightX = Math.cos(heading);
+    const rightZ = Math.sin(heading);
+
+    const origin = {
+      x: characterState.x + forwardX * 0.72,
+      z: characterState.z + forwardZ * 0.72
+    };
+
+    let bestHit = null;
+
+    for (const ped of world.getPedestrianTargets()) {
+      const dx = ped.x - origin.x;
+      const dz = ped.z - origin.z;
+
+      const forward = dx * forwardX + dz * forwardZ;
+      const lateral = dx * rightX + dz * rightZ;
+      const maxLateral = ped.radius + shot.hitRadius * 0.48;
+
+      if (forward < 0 || forward > shot.range) continue;
+      if (Math.abs(lateral) > maxLateral) continue;
+
+      if (!bestHit || forward < bestHit.forward) {
+        bestHit = {
+          type: "pedestrian",
+          id: ped.id,
+          x: ped.x,
+          z: ped.z,
+          forward,
+          lateral,
+          heading,
+          intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02
+        };
+      }
+    }
+
+    for (const vehicle of traffic) {
+      if (vehicle.wrecked) continue;
+
+      const pose = getVehiclePose(vehicle, world);
+      const dx = pose.x - origin.x;
+      const dz = pose.z - origin.z;
+
+      const forward = dx * forwardX + dz * forwardZ;
+      const lateral = dx * rightX + dz * rightZ;
+      const maxLateral = vehicle.collisionRadiusX + shot.hitRadius;
+
+      if (forward < 0 || forward > shot.range) continue;
+      if (Math.abs(lateral) > maxLateral) continue;
+
+      if (!bestHit || forward < bestHit.forward) {
+        bestHit = {
+          type: "vehicle",
+          vehicle,
+          pose,
+          forward,
+          lateral
+        };
+      }
+    }
+
+    if (!bestHit) return;
+
+    if (bestHit.type === "pedestrian") {
+      triggerShotOnPedestrian(bestHit);
+      return;
+    }
+
+    triggerShotOnVehicle(
+      bestHit.vehicle,
+      shot,
+      bestHit.lateral,
+      bestHit.pose
+    );
   }
 
   function getTurnSignal(upcomingIntersection) {
@@ -628,36 +1009,179 @@ export function createGame(scene, playerCar, world) {
   }
 
   function update(input, dt) {
-    updatePlayerInput(input, dt);
-    tryEnterGasStation(input);
+    let moveDistance = 0;
+    let upcomingIntersection = null;
+    let gasAccess = null;
+    let missionInteraction = null;
+    let inWeaponShopCounter = false;
 
-    const moveDistance = updatePlayer(dt);
-    updateFuel(dt, input, moveDistance);
-    updateRefuelState(dt);
+    if (!gameOver) {
+      if (playerMode === "driving") {
+        weapons.update(dt, input, {
+          playerMode,
+          inShop: false
+        });
 
-    updateTraffic(dt);
-    checkCollisions();
+        updateDrivingInput(input, dt);
 
-    const upcomingIntersection = world.getUpcomingIntersectionInfo(
-      player.segment,
-      player.segmentS
-    );
+        const enteredStation = tryEnterGasStation(input);
+        if (!enteredStation) {
+          tryExitVehicle(input);
+        }
 
-    const gasAccess = getGasStationAccess();
+        if (playerMode === "driving") {
+          moveDistance = updateDrivingPlayer(dt);
+          updateFuel(dt, input, moveDistance);
+          updateRefuelState(dt);
+
+          upcomingIntersection = world.getUpcomingIntersectionInfo(
+            player.segment,
+            player.segmentS
+          );
+
+          gasAccess = getGasStationAccess();
+        }
+      } else {
+        const characterStateNow = character.update(
+          input,
+          dt,
+          [getPlayerVehicleBlocker()]
+        );
+
+        inWeaponShopCounter = world.isPlayerNearWeaponShopCounter(characterStateNow);
+
+        weapons.update(dt, input, {
+          playerMode,
+          inShop: inWeaponShopCounter
+        });
+
+        missionInteraction = pizzaDelivery.getInteraction(
+          playerMode,
+          characterStateNow
+        );
+
+        const interactPressed = isInteractPressed(input);
+        const justPressed = interactPressed && !prevInteract;
+
+        if (justPressed && inWeaponShopCounter) {
+          const purchase = weapons.tryBuy(money);
+          if (purchase.success) {
+            money = purchase.money;
+          }
+        } else if (justPressed && missionInteraction) {
+          const result = pizzaDelivery.handleInteract(playerMode, characterStateNow);
+          if (result.handled && result.type === "deliver") {
+            money += result.rewardMoney ?? 0;
+          }
+        } else {
+          tryEnterVehicleFromFoot(input, characterStateNow);
+        }
+
+        const missionStateNow = pizzaDelivery.getState();
+        const shot = weapons.tryFire({
+          playerMode,
+          blocked: missionStateNow.carryingPizza
+        });
+
+        if (shot) {
+          fireWeapon(shot, characterStateNow);
+        }
+      }
+
+      if (!gameOver) {
+        updateTraffic(dt);
+
+        if (playerMode === "driving") {
+          checkDrivingCollisions();
+        } else {
+          checkPedestrianTrafficCollisions(character.getState());
+        }
+      }
+    } else {
+      weapons.update(dt, input, {
+        playerMode,
+        inShop: false
+      });
+    }
+
+    destruction.update(dt);
+
+    const characterState = character.getState();
+    const missionState = pizzaDelivery.getState();
     const fuelRatio = player.fuel / CONFIG.fuel.max;
+    const inGasStation = playerMode === "driving" && world.isGasStationSegment(player.segment);
+    const weaponHud = weapons.getHUDState(inWeaponShopCounter);
 
-    prevInteract = input.interact;
+    let actionPrompt = "";
+
+    if (!gameOver) {
+      if (playerMode === "walking") {
+        if (inWeaponShopCounter) {
+          actionPrompt = weapons.getShopPrompt(money);
+        } else if (missionInteraction?.prompt) {
+          actionPrompt = missionInteraction.prompt;
+        } else if (canEnterVehicle(characterState)) {
+          actionPrompt = "Entrar al coche [E]";
+        } else if (weaponHud.hasEquippedWeapon && !missionState.carryingPizza) {
+          actionPrompt = `Disparar [Click] · ${weaponHud.equippedShortLabel} · ${weaponHud.ammo} balas`;
+        }
+      } else if (gasAccess) {
+        actionPrompt = `Entrar a gasolinera [E] · ${gasAccess.brand}`;
+      } else if (canExitVehicle()) {
+        actionPrompt = "Salir del coche [E]";
+      }
+    }
+
+    prevInteract = isInteractPressed(input);
+
+    const activePose =
+      playerMode === "walking"
+        ? {
+            x: characterState.x,
+            z: characterState.z,
+            heading: characterState.heading
+          }
+        : player.pose;
+
+    const walkingSpeedKmh = Math.round(characterState.planarSpeed * 70);
 
     return {
       score: Math.floor(score),
+      money,
       gameOver,
-      speedKmh: Math.round(player.speed * 150),
-      rawSpeed: player.speed,
-      playerPose: player.pose,
-      upcomingIntersection,
-      isBraking: !gameOver && input.brake && player.speed > 0.01,
-      isAccelerating: !gameOver && input.accelerate && player.fuel > 0.001,
-      turnSignal: getTurnSignal(upcomingIntersection),
+      failureLabel,
+
+      playerMode,
+      playerPose: activePose,
+      vehiclePose: player.pose,
+      upcomingIntersection: playerMode === "driving" ? upcomingIntersection : null,
+
+      speedKmh:
+        playerMode === "walking"
+          ? walkingSpeedKmh
+          : Math.round(player.speed * 150),
+
+      rawSpeed:
+        playerMode === "walking"
+          ? characterState.planarSpeed
+          : player.speed,
+
+      isBraking:
+        playerMode === "driving" &&
+        !gameOver &&
+        input.brake &&
+        player.speed > 0.01,
+
+      isAccelerating:
+        playerMode === "driving" &&
+        !gameOver &&
+        input.accelerate &&
+        player.fuel > 0.001,
+
+      turnSignal:
+        playerMode === "driving"
+          ? getTurnSignal(upcomingIntersection)
+          : 0,
 
       fuelPct: Math.round(fuelRatio * 100),
       fuelLiters: Math.round(player.fuel * 10) / 10,
@@ -666,7 +1190,23 @@ export function createGame(scene, playerCar, world) {
       outOfFuel: player.fuel <= 0.001,
 
       isRefueling: player.isRefueling,
-      gasStationPrompt: gasAccess ? `Entrar gasolinera [E] · ${gasAccess.brand}` : ""
+      inGasStation,
+
+      actionPrompt,
+      missionState,
+      weaponHud,
+
+      characterState: {
+        visible: playerMode === "walking" && !characterDestroyed,
+        x: characterState.x,
+        z: characterState.z,
+        heading: characterState.heading,
+        planarSpeed: characterState.planarSpeed,
+        jumpOffset: characterState.jumpOffset,
+        onGround: characterState.onGround,
+        carryingPizza: missionState.carryingPizza,
+        weapon: weapons.getVisualState()
+      }
     };
   }
 

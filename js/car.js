@@ -61,8 +61,66 @@ function cloneMeshWithOwnMaterial(mesh) {
   return cloned;
 }
 
+function registerWreckable(rig, mesh, weight = 1) {
+  rig.wreckables.push({
+    mesh,
+    weight,
+    basePosition: mesh.position.clone(),
+    baseRotation: mesh.rotation.clone(),
+    baseScale: mesh.scale.clone()
+  });
+}
+
+function resetVehicleWreckState(vehicle) {
+  const rig = vehicle.userData.vehicleRig;
+  if (!rig) return;
+
+  rig.isWrecked = false;
+
+  for (const item of rig.wreckables) {
+    item.mesh.position.copy(item.basePosition);
+    item.mesh.rotation.copy(item.baseRotation);
+    item.mesh.scale.copy(item.baseScale);
+  }
+}
+
+export function setVehicleWreckState(vehicle, {
+  impactX = 0,
+  impactZ = 1,
+  intensity = 1
+} = {}) {
+  const rig = vehicle.userData.vehicleRig;
+  if (!rig || rig.isWrecked) return;
+
+  rig.isWrecked = true;
+
+  const xSign = impactX >= 0 ? 1 : -1;
+  const zSign = impactZ >= 0 ? 1 : -1;
+
+  for (const item of rig.wreckables) {
+    const f = intensity * item.weight;
+
+    item.mesh.position.x = item.basePosition.x + xSign * 0.05 * f;
+    item.mesh.position.y = item.basePosition.y + 0.025 * f;
+    item.mesh.position.z = item.basePosition.z - zSign * 0.06 * f;
+
+    item.mesh.rotation.x = item.baseRotation.x + zSign * 0.06 * f;
+    item.mesh.rotation.y = item.baseRotation.y + xSign * 0.015 * f;
+    item.mesh.rotation.z = item.baseRotation.z + xSign * 0.11 * f;
+
+    item.mesh.scale.x = Math.max(0.72, item.baseScale.x - 0.04 * f);
+    item.mesh.scale.y = Math.max(0.78, item.baseScale.y - 0.025 * f);
+    item.mesh.scale.z = Math.max(0.64, item.baseScale.z - 0.055 * f);
+  }
+}
+
 function createSimpleTrafficBody(color = 0x3366ff) {
   const group = new THREE.Group();
+  const vehicleRig = {
+    wreckables: [],
+    isWrecked: false
+  };
+  group.userData.vehicleRig = vehicleRig;
 
   const bodyMat = new THREE.MeshStandardMaterial({
     color,
@@ -88,6 +146,7 @@ function createSimpleTrafficBody(color = 0x3366ff) {
   );
   base.position.y = 0.9;
   group.add(base);
+  registerWreckable(vehicleRig, base, 1.1);
 
   const sideLeft = new THREE.Mesh(
     new THREE.BoxGeometry(0.25, 0.8, 4.2),
@@ -95,11 +154,13 @@ function createSimpleTrafficBody(color = 0x3366ff) {
   );
   sideLeft.position.set(-1.12, 0.92, 0);
   group.add(sideLeft);
+  registerWreckable(vehicleRig, sideLeft, 0.8);
 
   const sideRight = sideLeft.clone();
   sideRight.material = sideLeft.material.clone();
   sideRight.position.x = 1.12;
   group.add(sideRight);
+  registerWreckable(vehicleRig, sideRight, 0.8);
 
   const cabin = new THREE.Mesh(
     new THREE.BoxGeometry(1.6, 0.85, 2.15),
@@ -107,6 +168,7 @@ function createSimpleTrafficBody(color = 0x3366ff) {
   );
   cabin.position.set(0, 1.62, -0.2);
   group.add(cabin);
+  registerWreckable(vehicleRig, cabin, 0.9);
 
   const nose = new THREE.Mesh(
     new THREE.BoxGeometry(1.9, 0.45, 1.05),
@@ -114,6 +176,7 @@ function createSimpleTrafficBody(color = 0x3366ff) {
   );
   nose.position.set(0, 1.12, 1.68);
   group.add(nose);
+  registerWreckable(vehicleRig, nose, 1);
 
   for (const x of [-1.16, 1.16]) {
     for (const z of [-1.45, 1.45]) {
@@ -210,8 +273,256 @@ function createHeadlightRig(side = 1) {
   };
 }
 
+function createInterior(playerRig, vehicleRig) {
+  const interiorGroup = new THREE.Group();
+
+  const trimDarkMat = new THREE.MeshStandardMaterial({
+    color: 0x161a20,
+    roughness: 0.92
+  });
+
+  const trimMidMat = new THREE.MeshStandardMaterial({
+    color: 0x20242c,
+    roughness: 0.86
+  });
+
+  const trimSoftMat = new THREE.MeshStandardMaterial({
+    color: 0x2b313b,
+    roughness: 0.88
+  });
+
+  const displayMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    emissive: 0x1d4ed8,
+    emissiveIntensity: 0.32,
+    roughness: 0.2
+  });
+
+  const consoleMat = new THREE.MeshStandardMaterial({
+    color: 0x101418,
+    emissive: 0x0f766e,
+    emissiveIntensity: 0.18,
+    roughness: 0.22
+  });
+
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(1.52, 0.08, 2.2),
+    trimDarkMat
+  );
+  floor.position.set(0, 0.98, -0.02);
+  interiorGroup.add(floor);
+
+  const tunnel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.22, 1.5),
+    trimMidMat
+  );
+  tunnel.position.set(0, 1.09, -0.18);
+  interiorGroup.add(tunnel);
+
+  const dashBase = new THREE.Mesh(
+    new THREE.BoxGeometry(1.52, 0.32, 0.88),
+    trimMidMat
+  );
+  dashBase.position.set(0, 1.4, 1.08);
+  interiorGroup.add(dashBase);
+
+  const dashTop = new THREE.Mesh(
+    new THREE.BoxGeometry(1.44, 0.08, 0.72),
+    trimDarkMat
+  );
+  dashTop.position.set(0, 1.58, 1.01);
+  interiorGroup.add(dashTop);
+
+  const instrumentPod = new THREE.Mesh(
+    new THREE.BoxGeometry(0.64, 0.18, 0.28),
+    trimSoftMat
+  );
+  instrumentPod.position.set(-0.32, 1.58, 1.18);
+  instrumentPod.rotation.x = -0.24;
+  interiorGroup.add(instrumentPod);
+
+  const cluster = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.14, 0.04),
+    displayMat
+  );
+  cluster.position.set(-0.32, 1.56, 1.32);
+  cluster.rotation.x = -0.22;
+  interiorGroup.add(cluster);
+
+  const centerStack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.34, 0.36, 0.1),
+    consoleMat
+  );
+  centerStack.position.set(0.02, 1.42, 1.3);
+  centerStack.rotation.x = -0.18;
+  interiorGroup.add(centerStack);
+
+  const steeringColumn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.28, 10),
+    trimSoftMat
+  );
+  steeringColumn.rotation.x = Math.PI / 2;
+  steeringColumn.position.set(-0.38, 1.35, 0.9);
+  interiorGroup.add(steeringColumn);
+
+  const steeringWheel = new THREE.Mesh(
+    new THREE.TorusGeometry(0.17, 0.025, 10, 22),
+    new THREE.MeshStandardMaterial({
+      color: 0x111827,
+      roughness: 0.72
+    })
+  );
+  steeringWheel.rotation.set(Math.PI / 2, 0, 0.18);
+  steeringWheel.position.set(-0.38, 1.36, 0.78);
+  interiorGroup.add(steeringWheel);
+
+  const seatMat = new THREE.MeshStandardMaterial({
+    color: 0x20242c,
+    roughness: 0.92
+  });
+
+  const driverSeatBase = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.18, 0.52),
+    seatMat
+  );
+  driverSeatBase.position.set(-0.36, 1.1, 0.02);
+  interiorGroup.add(driverSeatBase);
+
+  const driverSeatBack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.48, 0.68, 0.14),
+    seatMat
+  );
+  driverSeatBack.position.set(-0.36, 1.44, -0.22);
+  driverSeatBack.rotation.x = 0.18;
+  interiorGroup.add(driverSeatBack);
+
+  const passengerSeatBase = driverSeatBase.clone();
+  passengerSeatBase.material = driverSeatBase.material.clone();
+  passengerSeatBase.position.x = 0.36;
+  interiorGroup.add(passengerSeatBase);
+
+  const passengerSeatBack = driverSeatBack.clone();
+  passengerSeatBack.material = driverSeatBack.material.clone();
+  passengerSeatBack.position.x = 0.36;
+  interiorGroup.add(passengerSeatBack);
+
+  const rearBench = new THREE.Mesh(
+    new THREE.BoxGeometry(1.08, 0.22, 0.56),
+    seatMat.clone()
+  );
+  rearBench.position.set(0, 1.12, -1.18);
+  interiorGroup.add(rearBench);
+
+  const rearBack = new THREE.Mesh(
+    new THREE.BoxGeometry(1.08, 0.56, 0.16),
+    seatMat.clone()
+  );
+  rearBack.position.set(0, 1.45, -1.46);
+  rearBack.rotation.x = 0.14;
+  interiorGroup.add(rearBack);
+
+  const windFrameTop = new THREE.Mesh(
+    new THREE.BoxGeometry(1.46, 0.1, 0.12),
+    trimDarkMat
+  );
+  windFrameTop.position.set(0, 2.0, 1.28);
+  interiorGroup.add(windFrameTop);
+
+  const windFrameLeft = new THREE.Mesh(
+    new THREE.BoxGeometry(0.1, 0.76, 0.12),
+    trimDarkMat
+  );
+  windFrameLeft.position.set(-0.73, 1.63, 1.16);
+  interiorGroup.add(windFrameLeft);
+
+  const windFrameRight = windFrameLeft.clone();
+  windFrameRight.material = windFrameLeft.material.clone();
+  windFrameRight.position.x = 0.73;
+  interiorGroup.add(windFrameRight);
+
+  const fpCameraAnchor = new THREE.Object3D();
+  fpCameraAnchor.position.set(-0.16, 1.8, 1.42);
+  interiorGroup.add(fpCameraAnchor);
+
+  const fpLookAnchor = new THREE.Object3D();
+  fpLookAnchor.position.set(-0.16, 1.77, 26);
+  interiorGroup.add(fpLookAnchor);
+
+  playerRig.firstPersonCameraAnchor = fpCameraAnchor;
+  playerRig.firstPersonLookAnchor = fpLookAnchor;
+  playerRig.interiorMeshes = [
+    floor,
+    tunnel,
+    dashBase,
+    dashTop,
+    instrumentPod,
+    cluster,
+    centerStack,
+    steeringColumn,
+    steeringWheel,
+    driverSeatBase,
+    driverSeatBack,
+    passengerSeatBase,
+    passengerSeatBack,
+    rearBench,
+    rearBack,
+    windFrameTop,
+    windFrameLeft,
+    windFrameRight
+  ];
+
+  playerRig.firstPersonHideInterior = [
+    floor,
+    tunnel,
+    driverSeatBase,
+    driverSeatBack,
+    passengerSeatBase,
+    passengerSeatBack,
+    rearBench,
+    rearBack,
+    windFrameTop,
+    windFrameLeft,
+    windFrameRight
+  ];
+
+  for (const mesh of playerRig.interiorMeshes) {
+    registerWreckable(vehicleRig, mesh, 0.42);
+  }
+
+  return interiorGroup;
+}
+
 function createPlayerRig() {
   const group = new THREE.Group();
+  const vehicleRig = {
+    wreckables: [],
+    isWrecked: false
+  };
+  group.userData.vehicleRig = vehicleRig;
+
+  const playerRig = {
+    headlights: [],
+    rearLights: [],
+    frontIndicators: [],
+    rearIndicators: [],
+    smokeRoot: null,
+    smokeParticles: [],
+    smokeIndex: 0,
+    smokeAccumulator: 0,
+    blinkTime: 0,
+    exhaustLocal: new THREE.Vector3(0.62, 0.72, -2.72),
+    tempWorld: new THREE.Vector3(),
+    tempDir: new THREE.Vector3(),
+    tempUp: new THREE.Vector3(),
+    tempPosition: new THREE.Vector3(),
+    tempLookAt: new THREE.Vector3(),
+    forceInteriorView: false,
+    hideInFirstPerson: [],
+    firstPersonHideInterior: [],
+    interiorMeshes: [],
+    firstPersonCameraAnchor: null,
+    firstPersonLookAnchor: null
+  };
 
   const paintMat = new THREE.MeshStandardMaterial({
     color: 0xd62828,
@@ -245,6 +556,7 @@ function createPlayerRig() {
   );
   body.position.y = 0.94;
   group.add(body);
+  registerWreckable(vehicleRig, body, 1.15);
 
   const frontClip = new THREE.Mesh(
     new THREE.BoxGeometry(1.98, 0.48, 1.15),
@@ -252,6 +564,7 @@ function createPlayerRig() {
   );
   frontClip.position.set(0, 1.06, 2.07);
   group.add(frontClip);
+  registerWreckable(vehicleRig, frontClip, 1);
 
   const rearClip = new THREE.Mesh(
     new THREE.BoxGeometry(1.96, 0.46, 0.92),
@@ -259,6 +572,7 @@ function createPlayerRig() {
   );
   rearClip.position.set(0, 1.02, -2.05);
   group.add(rearClip);
+  registerWreckable(vehicleRig, rearClip, 0.95);
 
   const roof = new THREE.Mesh(
     new THREE.BoxGeometry(1.62, 0.34, 2.3),
@@ -266,6 +580,7 @@ function createPlayerRig() {
   );
   roof.position.set(0, 1.95, -0.02);
   group.add(roof);
+  registerWreckable(vehicleRig, roof, 0.72);
 
   const windshield = new THREE.Mesh(
     new THREE.BoxGeometry(1.54, 0.72, 0.14),
@@ -274,6 +589,7 @@ function createPlayerRig() {
   windshield.position.set(0, 1.62, 1.0);
   windshield.rotation.x = -0.58;
   group.add(windshield);
+  registerWreckable(vehicleRig, windshield, 0.55);
 
   const rearGlass = new THREE.Mesh(
     new THREE.BoxGeometry(1.44, 0.58, 0.14),
@@ -282,6 +598,7 @@ function createPlayerRig() {
   rearGlass.position.set(0, 1.56, -1.1);
   rearGlass.rotation.x = 0.48;
   group.add(rearGlass);
+  registerWreckable(vehicleRig, rearGlass, 0.48);
 
   const cabin = new THREE.Mesh(
     new THREE.BoxGeometry(1.56, 0.82, 2.18),
@@ -289,6 +606,7 @@ function createPlayerRig() {
   );
   cabin.position.set(0, 1.55, -0.05);
   group.add(cabin);
+  registerWreckable(vehicleRig, cabin, 0.62);
 
   const splitter = new THREE.Mesh(
     new THREE.BoxGeometry(2.02, 0.08, 0.36),
@@ -296,6 +614,7 @@ function createPlayerRig() {
   );
   splitter.position.set(0, 0.55, 2.45);
   group.add(splitter);
+  registerWreckable(vehicleRig, splitter, 0.7);
 
   const diffuser = new THREE.Mesh(
     new THREE.BoxGeometry(1.9, 0.08, 0.28),
@@ -303,6 +622,7 @@ function createPlayerRig() {
   );
   diffuser.position.set(0, 0.54, -2.45);
   group.add(diffuser);
+  registerWreckable(vehicleRig, diffuser, 0.58);
 
   const sideSkirtLeft = new THREE.Mesh(
     new THREE.BoxGeometry(0.12, 0.18, 3.6),
@@ -310,6 +630,7 @@ function createPlayerRig() {
   );
   sideSkirtLeft.position.set(-1.07, 0.62, 0);
   group.add(sideSkirtLeft);
+  registerWreckable(vehicleRig, sideSkirtLeft, 0.52);
 
   const sideSkirtRight = new THREE.Mesh(
     new THREE.BoxGeometry(0.12, 0.18, 3.6),
@@ -317,6 +638,7 @@ function createPlayerRig() {
   );
   sideSkirtRight.position.set(1.07, 0.62, 0);
   group.add(sideSkirtRight);
+  registerWreckable(vehicleRig, sideSkirtRight, 0.52);
 
   const spoilerSupportLeft = new THREE.Mesh(
     new THREE.BoxGeometry(0.09, 0.32, 0.08),
@@ -338,6 +660,7 @@ function createPlayerRig() {
   );
   spoiler.position.set(0, 2.12, -2.14);
   group.add(spoiler);
+  registerWreckable(vehicleRig, spoiler, 0.48);
 
   const exhaust = new THREE.Mesh(
     new THREE.CylinderGeometry(0.08, 0.08, 0.42, 12),
@@ -383,6 +706,9 @@ function createPlayerRig() {
   const mirrorRight = createMirror(1);
   group.add(mirrorLeft, mirrorRight);
 
+  const interiorGroup = createInterior(playerRig, vehicleRig);
+  group.add(interiorGroup);
+
   for (const x of [-1.14, 1.14]) {
     for (const z of [-1.52, 1.54]) {
       const wheel = createWheel(0.44, 0.48);
@@ -417,21 +743,32 @@ function createPlayerRig() {
     });
   }
 
-  group.userData.playerRig = {
-    headlights: [headLeft, headRight],
-    rearLights: [brakeLeft, brakeRight],
-    frontIndicators: [indFrontLeft, indFrontRight],
-    rearIndicators: [indRearLeft, indRearRight],
-    smokeRoot,
-    smokeParticles,
-    smokeIndex: 0,
-    smokeAccumulator: 0,
-    blinkTime: 0,
-    exhaustLocal: new THREE.Vector3(0.62, 0.72, -2.72),
-    tempWorld: new THREE.Vector3(),
-    tempDir: new THREE.Vector3(),
-    tempUp: new THREE.Vector3()
-  };
+  playerRig.headlights = [headLeft, headRight];
+  playerRig.rearLights = [brakeLeft, brakeRight];
+  playerRig.frontIndicators = [indFrontLeft, indFrontRight];
+  playerRig.rearIndicators = [indRearLeft, indRearRight];
+  playerRig.smokeRoot = smokeRoot;
+  playerRig.smokeParticles = smokeParticles;
+  playerRig.hideInFirstPerson = [
+    body,
+    frontClip,
+    rearClip,
+    roof,
+    windshield,
+    rearGlass,
+    cabin,
+    splitter,
+    diffuser,
+    sideSkirtLeft,
+    sideSkirtRight,
+    mirrorLeft,
+    mirrorRight,
+    spoiler,
+    spoilerSupportLeft,
+    spoilerSupportRight
+  ];
+
+  group.userData.playerRig = playerRig;
 
   return group;
 }
@@ -446,9 +783,60 @@ export function attachPlayerCarEffects(car, scene) {
   scene.add(rig.smokeRoot);
 }
 
+export function setPlayerCarViewMode(car, {
+  firstPerson = false,
+  playerMode = "driving"
+} = {}) {
+  const rig = car.userData.playerRig;
+  if (!rig) return;
+
+  const enableInteriorView = !!firstPerson && playerMode === "driving";
+  rig.forceInteriorView = enableInteriorView;
+
+  for (const mesh of rig.hideInFirstPerson) {
+    mesh.visible = !enableInteriorView;
+  }
+
+  for (const mesh of rig.firstPersonHideInterior) {
+    mesh.visible = !enableInteriorView;
+  }
+
+  const keepVisible = [
+    ...rig.interiorMeshes.filter((mesh) => !rig.firstPersonHideInterior.includes(mesh))
+  ];
+
+  for (const mesh of keepVisible) {
+    mesh.visible = true;
+  }
+}
+
+export function getPlayerCarFirstPersonCameraPose(
+  car,
+  lookDistance = 28
+) {
+  const rig = car.userData.playerRig;
+  if (!rig || !rig.firstPersonCameraAnchor || !rig.firstPersonLookAnchor) {
+    return null;
+  }
+
+  rig.firstPersonCameraAnchor.getWorldPosition(rig.tempPosition);
+  rig.firstPersonLookAnchor.getWorldPosition(rig.tempLookAt);
+
+  const dir = rig.tempLookAt.clone().sub(rig.tempPosition).normalize();
+  rig.tempLookAt.copy(rig.tempPosition).addScaledVector(dir, lookDistance);
+
+  return {
+    position: rig.tempPosition.clone(),
+    lookAt: rig.tempLookAt.clone()
+  };
+}
+
 export function resetPlayerCarEffects(car) {
   const rig = car.userData.playerRig;
   if (!rig) return;
+
+  resetVehicleWreckState(car);
+  setPlayerCarViewMode(car, { firstPerson: false, playerMode: "driving" });
 
   rig.smokeAccumulator = 0;
   rig.blinkTime = 0;
@@ -602,6 +990,11 @@ export function createTrafficTruck(
   trailerColor = 0xe5e7eb
 ) {
   const group = new THREE.Group();
+  const vehicleRig = {
+    wreckables: [],
+    isWrecked: false
+  };
+  group.userData.vehicleRig = vehicleRig;
 
   const cabMat = new THREE.MeshStandardMaterial({
     color: cabColor,
@@ -633,6 +1026,7 @@ export function createTrafficTruck(
   );
   trailer.position.set(0, 1.75, -1.25);
   group.add(trailer);
+  registerWreckable(vehicleRig, trailer, 1.18);
 
   const chassis = new THREE.Mesh(
     new THREE.BoxGeometry(2.4, 0.32, 8.7),
@@ -640,6 +1034,7 @@ export function createTrafficTruck(
   );
   chassis.position.set(0, 0.62, -0.2);
   group.add(chassis);
+  registerWreckable(vehicleRig, chassis, 0.82);
 
   const cabBase = new THREE.Mesh(
     new THREE.BoxGeometry(2.25, 1.55, 2.15),
@@ -647,6 +1042,7 @@ export function createTrafficTruck(
   );
   cabBase.position.set(0, 1.35, 3.0);
   group.add(cabBase);
+  registerWreckable(vehicleRig, cabBase, 1);
 
   const cabTop = new THREE.Mesh(
     new THREE.BoxGeometry(2.05, 1.1, 1.55),
@@ -654,6 +1050,7 @@ export function createTrafficTruck(
   );
   cabTop.position.set(0, 2.25, 2.75);
   group.add(cabTop);
+  registerWreckable(vehicleRig, cabTop, 0.78);
 
   const windshield = new THREE.Mesh(
     new THREE.BoxGeometry(1.7, 0.8, 0.1),
@@ -661,6 +1058,7 @@ export function createTrafficTruck(
   );
   windshield.position.set(0, 2.18, 3.8);
   group.add(windshield);
+  registerWreckable(vehicleRig, windshield, 0.46);
 
   const grill = new THREE.Mesh(
     new THREE.BoxGeometry(1.8, 0.62, 0.14),
@@ -668,6 +1066,7 @@ export function createTrafficTruck(
   );
   grill.position.set(0, 1.2, 4.1);
   group.add(grill);
+  registerWreckable(vehicleRig, grill, 0.62);
 
   const bumper = new THREE.Mesh(
     new THREE.BoxGeometry(2.1, 0.26, 0.2),
@@ -675,6 +1074,7 @@ export function createTrafficTruck(
   );
   bumper.position.set(0, 0.78, 4.18);
   group.add(bumper);
+  registerWreckable(vehicleRig, bumper, 0.56);
 
   const wheelPositions = [
     [-1.25, 2.95],

@@ -5,15 +5,19 @@ import {
   normalizeAngle
 } from "./math.js";
 
+const ENTRY_FORWARD_PADDING = 5.8;
+const ENTRY_EARLY_DISTANCE = 18;
+const ENTRY_LATE_TOLERANCE = 10;
+const ACCESS_DISTANCE_LIMIT = 36;
+const ACCESS_HEADING_LIMIT = 0.78;
+const OUTER_LANE_BLEND = 0.9;
+
 function headingFromDelta(dx, dz) {
   return Math.atan2(dx, -dz);
 }
 
-function forwardFromHeading(heading) {
-  return {
-    x: Math.sin(heading),
-    z: -Math.cos(heading)
-  };
+function pointFromPose(pose) {
+  return { x: pose.x, z: pose.z };
 }
 
 function distanceSq(a, b) {
@@ -28,6 +32,15 @@ function minHeadingDelta(a, b) {
   return Math.min(d1, d2);
 }
 
+function sameRoad(a, b) {
+  return !!a && !!b &&
+    a.type === "road" &&
+    b.type === "road" &&
+    a.fromNodeId === b.fromNodeId &&
+    a.toNodeId === b.toNodeId &&
+    a.dir === b.dir;
+}
+
 function createRoadsidePoint(graph, roadSegment, s, dir, side, lateralOffset) {
   const base = graph.evaluateSegment(roadSegment, s, 0);
   const right = rightVectorFromDir(dir);
@@ -38,7 +51,7 @@ function createRoadsidePoint(graph, roadSegment, s, dir, side, lateralOffset) {
   };
 }
 
-function createCanvasLabel(text, bg = "#1f2937", fg = "#ffffff") {
+function createCanvasLabel(text, bg = "#1f2937", fg = "#ffffff", accent = "#fbbf24") {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 256;
@@ -47,29 +60,54 @@ function createCanvasLabel(text, bg = "#1f2937", fg = "#ffffff") {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = "#fbbf24";
-  ctx.fillRect(20, 20, 26, canvas.height - 40);
+  ctx.fillStyle = accent;
+  ctx.fillRect(18, 18, 26, canvas.height - 36);
 
   ctx.fillStyle = fg;
-  ctx.font = "bold 72px Arial";
+  ctx.font = "bold 70px Arial";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, canvas.width / 2 + 18, canvas.height / 2);
+  ctx.fillText(text, canvas.width / 2 + 16, canvas.height / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
   return texture;
 }
 
+function compactPathPoints(points, minDistance = 1.15) {
+  const out = [];
+
+  for (const p of points) {
+    if (!p) continue;
+    if (!out.length) {
+      out.push({ x: p.x, z: p.z });
+      continue;
+    }
+
+    const prev = out[out.length - 1];
+    if (Math.hypot(p.x - prev.x, p.z - prev.z) >= minDistance) {
+      out.push({ x: p.x, z: p.z });
+    }
+  }
+
+  if (out.length === 1) {
+    out.push({ x: out[0].x, z: out[0].z + 0.01 });
+  }
+
+  return out;
+}
+
 function buildPathSegment(type, stationId, points, extra = {}) {
+  const cleaned = compactPathPoints(points);
+
   const curve = new THREE.CatmullRomCurve3(
-    points.map((p) => new THREE.Vector3(p.x, 0, p.z)),
+    cleaned.map((p) => new THREE.Vector3(p.x, 0, p.z)),
     false,
     "centripetal",
-    0.35
+    0.38
   );
 
-  const samples3 = curve.getPoints(Math.max(18, points.length * 10));
+  const samples3 = curve.getPoints(Math.max(24, cleaned.length * 14));
   const samples = samples3.map((p) => ({ x: p.x, z: p.z }));
   const lengths = [0];
 
@@ -177,18 +215,66 @@ function createPumpIsland() {
   return group;
 }
 
+function createAdvanceFuelSign(station) {
+  const group = new THREE.Group();
+
+  const pole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 2.8, 0.24),
+    new THREE.MeshStandardMaterial({ color: 0xcbd5e1 })
+  );
+  pole.position.set(station.advanceSignBase.x, 1.4, station.advanceSignBase.z);
+  group.add(pole);
+
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.8, 1.4),
+    new THREE.MeshBasicMaterial({
+      map: createCanvasLabel("FUEL", "#1d4ed8", "#ffffff", "#93c5fd"),
+      side: THREE.DoubleSide
+    })
+  );
+  panel.position.set(station.advanceSignBase.x, 3.05, station.advanceSignBase.z);
+  panel.rotation.y = station.roadAlignedRotation;
+  group.add(panel);
+
+  const sub = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 0.72),
+    new THREE.MeshBasicMaterial({
+      map: createCanvasLabel("SERVICE", "#0f172a", "#e5e7eb", "#22c55e"),
+      side: THREE.DoubleSide
+    })
+  );
+  sub.position.set(station.advanceSignBase.x, 2.02, station.advanceSignBase.z);
+  sub.rotation.y = station.roadAlignedRotation;
+  group.add(sub);
+
+  return group;
+}
+
 function createGasStationVisual(station) {
   const group = new THREE.Group();
 
-  const roadAlignedRotation =
-    station.dir === "N" || station.dir === "S" ? Math.PI / 2 : 0;
+  const serviceLot = new THREE.Mesh(
+    new THREE.BoxGeometry(64, 0.14, 38),
+    new THREE.MeshStandardMaterial({ color: 0x59616a })
+  );
+  serviceLot.position.set(station.serviceLotCenter.x, 0.02, station.serviceLotCenter.z);
+  serviceLot.rotation.y = station.roadAlignedRotation;
+  group.add(serviceLot);
+
+  const roadsidePad = new THREE.Mesh(
+    new THREE.BoxGeometry(64, 0.1, 12),
+    new THREE.MeshStandardMaterial({ color: 0x666f78 })
+  );
+  roadsidePad.position.set(station.roadsidePadCenter.x, 0.03, station.roadsidePadCenter.z);
+  roadsidePad.rotation.y = station.roadAlignedRotation;
+  group.add(roadsidePad);
 
   const apron = new THREE.Mesh(
-    new THREE.BoxGeometry(58, 0.12, 20),
+    new THREE.BoxGeometry(60, 0.12, 26),
     new THREE.MeshStandardMaterial({ color: 0x4b5563 })
   );
-  apron.position.set(station.apronCenter.x, 0.02, station.apronCenter.z);
-  apron.rotation.y = roadAlignedRotation;
+  apron.position.set(station.apronCenter.x, 0.04, station.apronCenter.z);
+  apron.rotation.y = station.roadAlignedRotation;
   group.add(apron);
 
   const canopy = new THREE.Mesh(
@@ -200,7 +286,7 @@ function createGasStationVisual(station) {
     })
   );
   canopy.position.set(station.canopyCenter.x, 5.6, station.canopyCenter.z);
-  canopy.rotation.y = roadAlignedRotation;
+  canopy.rotation.y = station.roadAlignedRotation;
   group.add(canopy);
 
   const pillarGeom = new THREE.BoxGeometry(0.45, 5.2, 0.45);
@@ -215,7 +301,7 @@ function createGasStationVisual(station) {
   for (const p of station.pumpPositions) {
     const island = createPumpIsland();
     island.position.set(p.x, 0.02, p.z);
-    island.rotation.y = roadAlignedRotation;
+    island.rotation.y = station.roadAlignedRotation;
     group.add(island);
   }
 
@@ -224,7 +310,7 @@ function createGasStationVisual(station) {
     new THREE.MeshStandardMaterial({ color: 0xd6d3d1 })
   );
   kiosk.position.set(station.kioskCenter.x, 2.7, station.kioskCenter.z);
-  kiosk.rotation.y = roadAlignedRotation;
+  kiosk.rotation.y = station.roadAlignedRotation;
   group.add(kiosk);
 
   const kioskRoof = new THREE.Mesh(
@@ -232,7 +318,7 @@ function createGasStationVisual(station) {
     new THREE.MeshStandardMaterial({ color: 0x1f2937 })
   );
   kioskRoof.position.set(station.kioskCenter.x, 5.55, station.kioskCenter.z);
-  kioskRoof.rotation.y = roadAlignedRotation;
+  kioskRoof.rotation.y = station.roadAlignedRotation;
   group.add(kioskRoof);
 
   const frontGlass = new THREE.Mesh(
@@ -249,7 +335,7 @@ function createGasStationVisual(station) {
     2.55,
     station.kioskGlass.z
   );
-  frontGlass.rotation.y = roadAlignedRotation;
+  frontGlass.rotation.y = station.roadAlignedRotation;
   group.add(frontGlass);
 
   const signPole = new THREE.Mesh(
@@ -268,7 +354,7 @@ function createGasStationVisual(station) {
     })
   );
   signPanel.position.set(station.totemBase.x, 6.4, station.totemBase.z);
-  signPanel.rotation.y = roadAlignedRotation;
+  signPanel.rotation.y = station.roadAlignedRotation;
   group.add(signPanel);
 
   const drivewayMat = new THREE.MeshStandardMaterial({ color: 0x505760 });
@@ -278,10 +364,12 @@ function createGasStationVisual(station) {
       new THREE.BoxGeometry(d.length, 0.08, d.width),
       drivewayMat
     );
-    mesh.position.set(d.x, 0.01, d.z);
+    mesh.position.set(d.x, 0.05, d.z);
     mesh.rotation.y = d.rotY;
     group.add(mesh);
   }
+
+  group.add(createAdvanceFuelSign(station));
 
   return group;
 }
@@ -355,6 +443,16 @@ export function createGasStationController(scene, graph) {
     const dir = def.dir;
     const accessLaneOffset = side > 0 ? laneMax : laneMin;
     const midS = (def.entryS + def.exitS) * 0.5;
+    const mergeRoadS = THREE.MathUtils.clamp(def.exitS + 12, 0, road.length);
+
+    const shoulderIn = createRoadsidePoint(
+      graph,
+      road,
+      def.entryS - 3,
+      dir,
+      side,
+      CONFIG.roadWidth / 2 + 2.4
+    );
 
     const curbIn = createRoadsidePoint(
       graph,
@@ -378,6 +476,15 @@ export function createGasStationController(scene, graph) {
       graph,
       road,
       midS - 4,
+      dir,
+      side,
+      CONFIG.roadWidth / 2 + 13.9
+    );
+
+    const stopMid = createRoadsidePoint(
+      graph,
+      road,
+      midS,
       dir,
       side,
       CONFIG.roadWidth / 2 + 13.9
@@ -410,7 +517,40 @@ export function createGasStationController(scene, graph) {
       CONFIG.roadWidth / 2 + 4.8
     );
 
-    const mergePose = graph.evaluateSegment(road, def.exitS, accessLaneOffset);
+    const shoulderOut = createRoadsidePoint(
+      graph,
+      road,
+      def.exitS + 2,
+      dir,
+      side,
+      CONFIG.roadWidth / 2 + 2.4
+    );
+
+    const outerMergePose = graph.evaluateSegment(
+      road,
+      Math.max(def.exitS + 5, mergeRoadS - 5),
+      accessLaneOffset * OUTER_LANE_BLEND
+    );
+
+    const mergePose = graph.evaluateSegment(road, mergeRoadS, accessLaneOffset);
+
+    const roadsidePadCenter = createRoadsidePoint(
+      graph,
+      road,
+      midS,
+      dir,
+      side,
+      CONFIG.roadWidth / 2 + 10.4
+    );
+
+    const serviceLotCenter = createRoadsidePoint(
+      graph,
+      road,
+      midS,
+      dir,
+      side,
+      CONFIG.roadWidth / 2 + 18.2
+    );
 
     const apronCenter = createRoadsidePoint(
       graph,
@@ -457,6 +597,15 @@ export function createGasStationController(scene, graph) {
       CONFIG.roadWidth / 2 + 8.1
     );
 
+    const advanceSignBase = createRoadsidePoint(
+      graph,
+      road,
+      def.entryS - 18,
+      dir,
+      side,
+      CONFIG.roadWidth / 2 + 6.0
+    );
+
     const pumpPositions = [
       createRoadsidePoint(graph, road, midS - 7, dir, side, CONFIG.roadWidth / 2 + 14.4),
       createRoadsidePoint(graph, road, midS + 7, dir, side, CONFIG.roadWidth / 2 + 14.4)
@@ -477,27 +626,22 @@ export function createGasStationController(scene, graph) {
         x: (curbIn.x + bayEntry.x) * 0.5,
         z: (curbIn.z + bayEntry.z) * 0.5,
         length: Math.hypot(bayEntry.x - curbIn.x, bayEntry.z - curbIn.z),
-        width: 8.6,
+        width: 10.4,
         rotY: roadAlignedRotation
       },
       {
         x: (bayExit.x + curbOut.x) * 0.5,
         z: (bayExit.z + curbOut.z) * 0.5,
         length: Math.hypot(curbOut.x - bayExit.x, curbOut.z - bayExit.z),
-        width: 8.6,
+        width: 10.4,
         rotY: roadAlignedRotation
       }
     ];
 
-    const triggerCenter = {
-      x: (curbIn.x + bayEntry.x) * 0.5,
-      z: (curbIn.z + bayEntry.z) * 0.5
-    };
-
     const stopSegment = buildPathSegment(
       "gas-stop",
       def.id,
-      [stopStart, stopEnd],
+      [stopStart, stopMid, stopEnd],
       {
         fixedHeading: headingFromDelta(stopEnd.x - stopStart.x, stopEnd.z - stopStart.z)
       }
@@ -506,11 +650,11 @@ export function createGasStationController(scene, graph) {
     const exitSegment = buildPathSegment(
       "gas-exit",
       def.id,
-      [stopEnd, bayExit, curbOut, { x: mergePose.x, z: mergePose.z }],
+      [stopEnd, bayExit, curbOut, shoulderOut, pointFromPose(outerMergePose), pointFromPose(mergePose)],
       {
         returnRoadFromNodeId: def.fromNodeId,
         returnRoadDir: def.dir,
-        returnRoadS: def.exitS,
+        returnRoadS: mergeRoadS,
         returnLaneOffset: accessLaneOffset
       }
     );
@@ -521,29 +665,34 @@ export function createGasStationController(scene, graph) {
       side,
       accessLaneOffset,
       approachHeading: road.heading,
-      entryWindowStart: def.entryS - CONFIG.fuel.entryWindowHalfSize,
-      entryWindowEnd: def.entryS + CONFIG.fuel.entryWindowHalfSize,
+      entryWindowStart: def.entryS - Math.max(CONFIG.fuel.entryWindowHalfSize, ENTRY_EARLY_DISTANCE),
+      entryWindowEnd: def.entryS + ENTRY_LATE_TOLERANCE,
+      roadAlignedRotation,
+      roadsidePadCenter,
+      serviceLotCenter,
       apronCenter,
       canopyCenter,
       kioskCenter,
       kioskGlass,
       totemBase,
+      advanceSignBase,
       canopyPillars,
       pumpPositions,
       drivewayVisuals,
-      triggerCenter,
+      shoulderIn,
       curbIn,
       bayEntry,
       stopStart,
       stopEnd,
       bayExit,
       curbOut,
-      mergePose,
+      shoulderOut,
+      mergePose: pointFromPose(mergePose),
       stopSegment,
       exitSegment
     };
 
-    registerReservedArea(apronCenter.x, apronCenter.z, 30);
+    registerReservedArea(apronCenter.x, apronCenter.z, 34);
     return station;
   }
 
@@ -560,64 +709,32 @@ export function createGasStationController(scene, graph) {
     }
   }
 
-  function isInsideEntryTrigger(playerPose, station) {
-    const forward = forwardFromHeading(station.approachHeading);
-    const right = rightVectorFromDir(station.dir);
-
-    const dx = playerPose.x - station.triggerCenter.x;
-    const dz = playerPose.z - station.triggerCenter.z;
-
-    const localForward = dx * forward.x + dz * forward.z;
-    const localRight = dx * right.x + dz * right.y;
-
-    return (
-      Math.abs(localForward) <= 18 &&
-      Math.abs(localRight) <= 12
-    );
-  }
-
-  function getCandidateScore(playerPose, station) {
-    const d0 = distanceSq(playerPose, station.triggerCenter);
-    const d1 = distanceSq(playerPose, station.curbIn);
-    const d2 = distanceSq(playerPose, station.bayEntry);
-    return Math.min(d0, d1, d2);
-  }
-
   function getAvailableAccess(playerPose, segment, s, laneOffset, speed) {
-    if (!playerPose) return null;
+    if (!playerPose || !segment || segment.type !== "road") return null;
     if (speed > CONFIG.fuel.stationEnterSpeedMax + 0.1) return null;
 
     let best = null;
     let bestScore = Infinity;
 
     for (const station of stations) {
-      const dTrigger = distanceSq(playerPose, station.triggerCenter);
-      const dCurb = distanceSq(playerPose, station.curbIn);
-      const dApron = distanceSq(playerPose, station.apronCenter);
+      if (!sameRoad(segment, station.road)) continue;
 
-      const nearEnough =
-        dTrigger < 28 * 28 ||
-        dCurb < 28 * 28 ||
-        dApron < 40 * 40;
+      const longitudinalDelta = station.entryS - s;
+      if (longitudinalDelta < -ENTRY_LATE_TOLERANCE) continue;
+      if (longitudinalDelta > Math.max(CONFIG.fuel.entryWindowHalfSize + 10, 30)) continue;
 
-      if (!nearEnough) continue;
+      const headingDelta = minHeadingDelta(playerPose.heading, station.approachHeading);
+      if (headingDelta > ACCESS_HEADING_LIMIT) continue;
 
-      const headingDelta = minHeadingDelta(
-        playerPose.heading,
-        station.approachHeading
-      );
+      const entryDistanceSq = distanceSq(playerPose, station.curbIn);
+      if (entryDistanceSq > ACCESS_DISTANCE_LIMIT * ACCESS_DISTANCE_LIMIT) continue;
 
-      const headingOk = headingDelta < 1.15 || dTrigger < 10 * 10;
-      if (!headingOk) continue;
-
-      const triggerOk =
-        isInsideEntryTrigger(playerPose, station) ||
-        dCurb < 16 * 16 ||
-        dTrigger < 14 * 14;
-
-      if (!triggerOk) continue;
-
-      const score = getCandidateScore(playerPose, station);
+      const lanePenalty = Math.abs(laneOffset - station.accessLaneOffset) * 5.5;
+      const score =
+        Math.abs(longitudinalDelta) * 2.2 +
+        entryDistanceSq * 0.02 +
+        lanePenalty +
+        speed * 16;
 
       if (score < bestScore) {
         bestScore = score;
@@ -631,25 +748,54 @@ export function createGasStationController(scene, graph) {
     return best;
   }
 
-  function createEntrySegment(playerPose, stationId) {
+  function createEntrySegment(playerPose, currentSegment, currentS = 0, laneOffset = 0, stationId) {
     const station = stationMap.get(stationId);
     if (!station) return null;
 
-    const headingPoint = {
-      x: playerPose.x + Math.sin(playerPose.heading) * 4.8,
-      z: playerPose.z - Math.cos(playerPose.heading) * 4.8
-    };
+    const sameCurrentRoad = sameRoad(currentSegment, station.road);
+
+    const start = playerPose
+      ? { x: playerPose.x, z: playerPose.z }
+      : pointFromPose(graph.evaluateSegment(station.road, currentS, laneOffset));
+
+    const headingPoint = playerPose
+      ? {
+          x: playerPose.x + Math.sin(playerPose.heading) * ENTRY_FORWARD_PADDING,
+          z: playerPose.z - Math.cos(playerPose.heading) * ENTRY_FORWARD_PADDING
+        }
+      : pointFromPose(graph.evaluateSegment(station.road, Math.min(currentS + 6, station.entryS - 6), laneOffset));
+
+    const points = [start, headingPoint];
+
+    if (sameCurrentRoad && currentS < station.entryS - 8) {
+      const prepS = THREE.MathUtils.clamp(
+        Math.max(currentS + 7, station.entryS - 16),
+        0,
+        station.entryS - 6
+      );
+
+      const prepPose = graph.evaluateSegment(station.road, prepS, laneOffset);
+      points.push(pointFromPose(prepPose));
+    }
+
+    const outerRoadPose = graph.evaluateSegment(
+      station.road,
+      Math.max(0, station.entryS - 2),
+      station.accessLaneOffset * OUTER_LANE_BLEND
+    );
+
+    points.push(
+      pointFromPose(outerRoadPose),
+      station.shoulderIn,
+      station.curbIn,
+      station.bayEntry,
+      station.stopStart
+    );
 
     return buildPathSegment(
       "gas-entry",
       station.id,
-      [
-        { x: playerPose.x, z: playerPose.z },
-        headingPoint,
-        station.curbIn,
-        station.bayEntry,
-        station.stopStart
-      ]
+      points
     );
   }
 

@@ -6,7 +6,17 @@ export function createInput() {
     brake: false,
     restart: false,
     interact: false,
-    toggleNight: false
+    toggleNight: false,
+    toggleFirstPerson: false,
+    jump: false,
+    sprint: false,
+
+    fire: false,
+    shopPrev: false,
+    shopNext: false,
+    selectWeapon1: false,
+    selectWeapon2: false,
+    selectWeapon3: false
   };
 
   const keyMap = {
@@ -20,7 +30,17 @@ export function createInput() {
     KeyS: "brake",
     KeyR: "restart",
     KeyE: "interact",
-    Enter: "interact"
+    Enter: "interact",
+    Space: "jump",
+    ShiftLeft: "sprint",
+    ShiftRight: "sprint",
+
+    KeyQ: "shopPrev",
+    KeyF: "shopNext",
+    Digit1: "selectWeapon1",
+    Digit2: "selectWeapon2",
+    Digit3: "selectWeapon3",
+    KeyX: "fire"
   };
 
   function setKey(code, value) {
@@ -37,12 +57,38 @@ export function createInput() {
       return;
     }
 
+    if (event.code === "KeyV") {
+      if (!event.repeat) {
+        input.toggleFirstPerson = true;
+      }
+      return;
+    }
+
     setKey(event.code, true);
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyN") return;
+    if (event.code === "KeyN" || event.code === "KeyV") return;
     setKey(event.code, false);
+  });
+
+  window.addEventListener("mousedown", (event) => {
+    if (event.button === 0) {
+      input.fire = true;
+    }
+  });
+
+  window.addEventListener("mouseup", (event) => {
+    if (event.button === 0) {
+      input.fire = false;
+    }
+  });
+
+  window.addEventListener("blur", () => {
+    for (const key of Object.keys(input)) {
+      if (key === "toggleNight" || key === "toggleFirstPerson") continue;
+      input[key] = false;
+    }
   });
 
   return input;
