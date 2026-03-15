@@ -51,6 +51,7 @@ const navPlayerEl = document.querySelector("#nav-player");
 const navCarEl = document.querySelector("#nav-car");
 const navTargetEl = document.querySelector("#nav-target");
 const navPizzeriaEl = document.querySelector("#nav-pizzeria");
+const navMapViewEl = navPlayerEl.parentElement;
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -82,7 +83,10 @@ const playerCharacter = createPlayerCharacter();
 scene.add(playerCharacter);
 
 const game = createGame(scene, playerCar, playerCharacter, world);
-const pizzeriaInfo = world.getPizzeriaInfo();
+
+const pizzeriaInfo = world.getPizzeriaInfo ? world.getPizzeriaInfo() : null;
+const weaponShopInfo = world.getWeaponShopInfo ? world.getWeaponShopInfo() : null;
+const gasStationInfos = world.getGasStationInfos ? world.getGasStationInfos() : [];
 
 const lookTarget = new THREE.Vector3();
 const cameraController = createCameraController(camera, lookTarget);
@@ -115,6 +119,44 @@ function createSvgLine(x1, y1, x2, y2, cls) {
   line.setAttribute("class", cls);
   return line;
 }
+
+function applyInlineMarkerStyle(el, type) {
+  el.style.position = "absolute";
+  el.style.pointerEvents = "none";
+
+  if (type === "weapon-shop") {
+    el.style.width = "12px";
+    el.style.height = "12px";
+    el.style.borderRadius = "3px";
+    el.style.background = "#ef4444";
+    el.style.boxShadow = "0 0 0 3px rgba(239,68,68,0.16), 0 0 12px rgba(239,68,68,0.42)";
+  }
+
+  if (type === "gas-station") {
+    el.style.width = "10px";
+    el.style.height = "10px";
+    el.style.borderRadius = "2px";
+    el.style.background = "#22c55e";
+    el.style.boxShadow = "0 0 0 3px rgba(34,197,94,0.15), 0 0 12px rgba(34,197,94,0.38)";
+  }
+}
+
+function createMapMarker(className, title = "", styleType = "") {
+  const el = document.createElement("div");
+  el.className = `map-marker ${className}`;
+  el.title = title;
+  applyInlineMarkerStyle(el, styleType || className);
+  navMapViewEl.appendChild(el);
+  return el;
+}
+
+const navWeaponShopEl = weaponShopInfo
+  ? createMapMarker("weapon-shop", weaponShopInfo.label, "weapon-shop")
+  : null;
+
+const navGasStationEls = gasStationInfos.map((station) =>
+  createMapMarker("gas-station", station.brand, "gas-station")
+);
 
 function initMinimap() {
   navMapSvg.setAttribute("viewBox", `0 0 ${MAP_SIZE} ${MAP_SIZE}`);
@@ -214,8 +256,30 @@ function updateWeaponUI(state) {
 function updateMinimap(state) {
   const playerPoint = worldToMap(state.playerPose.x, state.playerPose.z);
 
-  setMarker(navPlayerEl, state.playerPose.x, state.playerPose.z, Math.PI - state.playerPose.heading, true);
-  setMarker(navPizzeriaEl, pizzeriaInfo.center.x, pizzeriaInfo.center.z, 0, true);
+  setMarker(
+    navPlayerEl,
+    state.playerPose.x,
+    state.playerPose.z,
+    Math.PI - state.playerPose.heading,
+    true
+  );
+
+  if (pizzeriaInfo) {
+    setMarker(navPizzeriaEl, pizzeriaInfo.center.x, pizzeriaInfo.center.z, 0, true);
+  } else {
+    navPizzeriaEl.classList.add("hidden");
+  }
+
+  if (navWeaponShopEl && weaponShopInfo) {
+    setMarker(navWeaponShopEl, weaponShopInfo.center.x, weaponShopInfo.center.z, 0, true);
+  }
+
+  for (let i = 0; i < navGasStationEls.length; i++) {
+    const el = navGasStationEls[i];
+    const info = gasStationInfos[i];
+    if (!el || !info) continue;
+    setMarker(el, info.center.x, info.center.z, Math.PI / 4, true);
+  }
 
   const showCar = state.playerMode === "walking";
   setMarker(navCarEl, state.vehiclePose.x, state.vehiclePose.z, 0, showCar);
@@ -239,7 +303,7 @@ function updateMinimap(state) {
     navTargetEl.classList.add("hidden");
     navRouteEl.classList.add("hidden");
     navMapTitleEl.textContent = "Mapa de ciudad";
-    navMapStateEl.textContent = "Pizzería Vesuvio";
+    navMapStateEl.textContent = "Pizzería · Armería · Fuel";
   }
 }
 

@@ -236,6 +236,7 @@ export function createWorld(scene) {
     createGasStationEntrySegment: gasStations.createEntrySegment,
     buildAfterSpecialSegment: gasStations.buildAfterSpecialSegment,
     isGasStationSegment: gasStations.isGasStationSegment,
+    getGasStationInfos: gasStations.getInfos,
 
     getPizzeriaInfo: pizzeria.getInfo,
     isPlayerNearPizzeriaPickup: pizzeria.isNearPickup,

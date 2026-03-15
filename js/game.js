@@ -6,6 +6,7 @@ import {
   setVehicleWreckState
 } from "./car.js";
 import { createCharacterController } from "./player/characterController.js";
+import { getPlayerCharacterWeaponMuzzlePose } from "./player/characterVisual.js";
 import { createDestructionController } from "./effects/destruction.js";
 import { createPizzaDeliveryController } from "./missions/pizzaDelivery.js";
 import { createWeaponController } from "./combat/weapons.js";
@@ -37,6 +38,8 @@ const TRUCK_TRAILER_COLORS = [
   0xe2e8f0,
   0xfef3c7
 ];
+
+const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -179,6 +182,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   const destruction = createDestructionController(scene);
   const pizzaDelivery = createPizzaDeliveryController(world);
   const weapons = createWeaponController();
+  const shotTracers = [];
+
+  const tracerTempMid = new THREE.Vector3();
+  const tracerTempDir = new THREE.Vector3();
+  const tracerUp = new THREE.Vector3(0, 1, 0);
 
   const player = {
     segment: null,
@@ -204,6 +212,65 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let playerMode = "driving";
   let failureLabel = "Chocado";
   let characterDestroyed = false;
+
+  function clearShotTracers() {
+    while (shotTracers.length) {
+      const tracer = shotTracers.pop();
+      scene.remove(tracer.mesh);
+      tracer.mesh.material.dispose();
+    }
+  }
+
+  function spawnShotTracer(start, end, shot) {
+    const direction = tracerTempDir.copy(end).sub(start);
+    const distance = direction.length();
+
+    if (distance <= 0.001) return;
+
+    direction.normalize();
+
+    const material = new THREE.MeshBasicMaterial({
+      color: shot.visualTracerColor ?? 0xfff1b8,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false
+    });
+
+    const mesh = new THREE.Mesh(TRACER_GEOMETRY, material);
+    mesh.position.copy(tracerTempMid.copy(start).add(end).multiplyScalar(0.5));
+    mesh.quaternion.setFromUnitVectors(tracerUp, direction);
+    mesh.scale.set(
+      shot.visualTracerThickness ?? 0.02,
+      distance,
+      shot.visualTracerThickness ?? 0.02
+    );
+    mesh.frustumCulled = false;
+
+    scene.add(mesh);
+
+    shotTracers.push({
+      mesh,
+      life: shot.visualTracerLife ?? 0.05,
+      maxLife: shot.visualTracerLife ?? 0.05
+    });
+  }
+
+  function updateShotTracers(dt) {
+    for (let i = shotTracers.length - 1; i >= 0; i--) {
+      const tracer = shotTracers[i];
+      tracer.life -= dt;
+
+      if (tracer.life <= 0) {
+        scene.remove(tracer.mesh);
+        tracer.mesh.material.dispose();
+        shotTracers.splice(i, 1);
+        continue;
+      }
+
+      const alpha = tracer.life / tracer.maxLife;
+      tracer.mesh.material.opacity = alpha * 0.95;
+    }
+  }
 
   function createTrafficVehicle({
     type,
@@ -323,6 +390,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     }
     traffic.length = 0;
 
+    clearShotTracers();
     destruction.reset();
     pizzaDelivery.reset();
     weapons.reset();
@@ -913,23 +981,68 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     );
   }
 
-  function fireWeapon(shot, characterState) {
+  function getShotOriginAndDirection(characterState) {
+    const muzzlePose = getPlayerCharacterWeaponMuzzlePose(playerCharacter);
+
+    if (muzzlePose) {
+      const flatForward = new THREE.Vector3(
+        muzzlePose.forward.x,
+        0,
+        muzzlePose.forward.z
+      );
+
+      if (flatForward.lengthSq() > 0.0001) {
+        flatForward.normalize();
+
+        return {
+          origin2D: {
+            x: muzzlePose.position.x,
+            z: muzzlePose.position.z
+          },
+          start3D: new THREE.Vector3(
+            muzzlePose.position.x,
+            muzzlePose.position.y,
+            muzzlePose.position.z
+          ),
+          forwardX: flatForward.x,
+          forwardZ: flatForward.z,
+          tracerForward3D: flatForward.clone()
+        };
+      }
+    }
+
     const heading = characterState.heading;
     const forwardX = Math.sin(heading);
     const forwardZ = -Math.cos(heading);
-    const rightX = Math.cos(heading);
-    const rightZ = Math.sin(heading);
 
-    const origin = {
-      x: characterState.x + forwardX * 0.72,
-      z: characterState.z + forwardZ * 0.72
+    return {
+      origin2D: {
+        x: characterState.x + forwardX * 0.72,
+        z: characterState.z + forwardZ * 0.72
+      },
+      start3D: new THREE.Vector3(
+        characterState.x + forwardX * 0.72,
+        1.46 + (characterState.jumpOffset ?? 0),
+        characterState.z + forwardZ * 0.72
+      ),
+      forwardX,
+      forwardZ,
+      tracerForward3D: new THREE.Vector3(forwardX, 0, forwardZ).normalize()
     };
+  }
+
+  function fireWeapon(shot, characterState) {
+    const shotPose = getShotOriginAndDirection(characterState);
+    const { origin2D, start3D, forwardX, forwardZ, tracerForward3D } = shotPose;
+
+    const rightX = Math.cos(characterState.heading);
+    const rightZ = Math.sin(characterState.heading);
 
     let bestHit = null;
 
     for (const ped of world.getPedestrianTargets()) {
-      const dx = ped.x - origin.x;
-      const dz = ped.z - origin.z;
+      const dx = ped.x - origin2D.x;
+      const dz = ped.z - origin2D.z;
 
       const forward = dx * forwardX + dz * forwardZ;
       const lateral = dx * rightX + dz * rightZ;
@@ -946,7 +1059,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           z: ped.z,
           forward,
           lateral,
-          heading,
+          heading: characterState.heading,
           intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02
         };
       }
@@ -956,8 +1069,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       if (vehicle.wrecked) continue;
 
       const pose = getVehiclePose(vehicle, world);
-      const dx = pose.x - origin.x;
-      const dz = pose.z - origin.z;
+      const dx = pose.x - origin2D.x;
+      const dz = pose.z - origin2D.z;
 
       const forward = dx * forwardX + dz * forwardZ;
       const lateral = dx * rightX + dz * rightZ;
@@ -976,6 +1089,17 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         };
       }
     }
+
+    const visibleDistance = bestHit
+      ? Math.min(bestHit.forward, shot.visualTracerLength ?? 9)
+      : (shot.visualTracerLength ?? 9);
+
+    const tracerEnd = start3D.clone().addScaledVector(
+      tracerForward3D,
+      Math.max(0.2, visibleDistance)
+    );
+
+    spawnShotTracer(start3D, tracerEnd, shot);
 
     if (!bestHit) return;
 
@@ -1104,6 +1228,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       });
     }
 
+    updateShotTracers(dt);
     destruction.update(dt);
 
     const characterState = character.getState();

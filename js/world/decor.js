@@ -285,9 +285,14 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     const rnd = makeRng(555);
 
     for (let i = 0; i < CONFIG.decor.movingPedestrians; i++) {
-      const road = roadMetas[i % roadMetas.length];
+      const road = roadMetas[Math.floor(rnd() * roadMetas.length)];
       const side = rnd() < 0.5 ? -1 : 1;
-      const sidewalkOffset = CONFIG.roadWidth / 2 + 5.3;
+      const sidewalkOffset = CONFIG.roadWidth / 2 + 5.05 + rnd() * 1.95;
+      const travelSpan = 82 + rnd() * 132;
+      const centerAlong = -road.length / 2 + 28 + rnd() * (road.length - 56);
+      const startAlong = Math.max(-road.length / 2 + 18, centerAlong - travelSpan * 0.5);
+      const endAlong = Math.min(road.length / 2 - 18, centerAlong + travelSpan * 0.5);
+      const lateralJitter = (rnd() - 0.5) * 1.1;
 
       let start;
       let end;
@@ -295,31 +300,31 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
       if (road.horizontal) {
         start = new THREE.Vector3(
-          road.x - road.length / 2 + 24 + rnd() * 40,
+          road.x + startAlong,
           0,
-          road.z + sidewalkOffset * side
+          road.z + sidewalkOffset * side + lateralJitter
         );
         end = new THREE.Vector3(
-          road.x + road.length / 2 - 24 - rnd() * 40,
+          road.x + endAlong,
           0,
-          road.z + sidewalkOffset * side
+          road.z + sidewalkOffset * side - lateralJitter * 0.6
         );
         heading = Math.PI / 2;
       } else {
         start = new THREE.Vector3(
-          road.x + sidewalkOffset * side,
+          road.x + sidewalkOffset * side + lateralJitter,
           0,
-          road.z - road.length / 2 + 24 + rnd() * 40
+          road.z + startAlong
         );
         end = new THREE.Vector3(
-          road.x + sidewalkOffset * side,
+          road.x + sidewalkOffset * side - lateralJitter * 0.6,
           0,
-          road.z + road.length / 2 - 24 - rnd() * 40
+          road.z + endAlong
         );
         heading = 0;
       }
 
-      if (isReserved(start.x, start.z, 4) || isReserved(end.x, end.z, 4)) {
+      if (isReserved(start.x, start.z, 3.4) || isReserved(end.x, end.z, 3.4)) {
         continue;
       }
 
@@ -338,7 +343,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         end,
         t: rnd(),
         dir: rnd() < 0.5 ? 1 : -1,
-        speed: 0.035 + rnd() * 0.035,
+        speed: 0.032 + rnd() * 0.04,
         phase: rnd() * Math.PI * 2
       });
     }
@@ -347,32 +352,38 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   function addStaticPedestrians() {
     const rnd = makeRng(7777);
     let created = 0;
+    let attempts = 0;
+    const maxAttempts = CONFIG.decor.staticPedestrians * 14;
 
-    for (let i = 0; i < roadMetas.length && created < CONFIG.decor.staticPedestrians; i++) {
-      const road = roadMetas[i];
-      const clusterCount = 4 + Math.floor(rnd() * 4);
+    while (created < CONFIG.decor.staticPedestrians && attempts < maxAttempts) {
+      attempts++;
 
-      for (let c = 0; c < clusterCount && created < CONFIG.decor.staticPedestrians; c++) {
-        const side = rnd() < 0.5 ? -1 : 1;
-        const sidewalkOffset = CONFIG.roadWidth / 2 + 5.4;
-        const along = -road.length / 2 + 20 + rnd() * (road.length - 40);
+      const road = roadMetas[Math.floor(rnd() * roadMetas.length)];
+      const side = rnd() < 0.5 ? -1 : 1;
+      const sidewalkOffset = CONFIG.roadWidth / 2 + 5.15 + rnd() * 2.2;
+      const clusterSize = 4 + Math.floor(rnd() * 7);
+      const clusterCenter = -road.length / 2 + 20 + rnd() * (road.length - 40);
+
+      for (let c = 0; c < clusterSize && created < CONFIG.decor.staticPedestrians; c++) {
+        const along = clusterCenter + (rnd() - 0.5) * 9.5;
+        const lateral = sidewalkOffset * side + (rnd() - 0.5) * 2.8;
 
         const x = road.horizontal
           ? road.x + along
-          : road.x + sidewalkOffset * side + (rnd() - 0.5) * 1.8;
+          : road.x + lateral;
 
         const z = road.horizontal
-          ? road.z + sidewalkOffset * side + (rnd() - 0.5) * 1.8
+          ? road.z + lateral
           : road.z + along;
 
-        if (isReserved(x, z, 3.5)) continue;
+        if (isReserved(x, z, 2.8)) continue;
 
         const ped = createPedestrian(9000 + created * 13);
         ped.group.position.set(x, 0, z);
         ped.group.rotation.y = rnd() * Math.PI * 2;
 
-        const armPose = (rnd() - 0.5) * 0.5;
-        const legPose = (rnd() - 0.5) * 0.35;
+        const armPose = (rnd() - 0.5) * 0.52;
+        const legPose = (rnd() - 0.5) * 0.38;
 
         ped.armLeft.rotation.x = armPose;
         ped.armRight.rotation.x = -armPose * 0.85;

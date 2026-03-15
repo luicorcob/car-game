@@ -112,7 +112,7 @@ function createRifleProp() {
 
 export function createWeaponShopController(scene, graph, hooks = {}) {
   const center = { x: 140, z: 56 };
-  const rotY = 0;
+  const rotY = Math.PI;
 
   const dims = {
     width: 28,

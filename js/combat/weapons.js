@@ -10,7 +10,11 @@ const WEAPON_CATALOG = [
     fireInterval: 0.24,
     range: 170,
     hitRadius: 0.9,
-    automatic: false
+    automatic: false,
+    visualTracerLength: 8.5,
+    visualTracerThickness: 0.022,
+    visualTracerColor: 0xffefb0,
+    visualTracerLife: 0.05
   },
   {
     id: "shotgun",
@@ -23,7 +27,11 @@ const WEAPON_CATALOG = [
     fireInterval: 0.62,
     range: 88,
     hitRadius: 1.6,
-    automatic: false
+    automatic: false,
+    visualTracerLength: 6.8,
+    visualTracerThickness: 0.034,
+    visualTracerColor: 0xffd38a,
+    visualTracerLife: 0.06
   },
   {
     id: "rifle",
@@ -36,7 +44,11 @@ const WEAPON_CATALOG = [
     fireInterval: 0.1,
     range: 240,
     hitRadius: 0.95,
-    automatic: true
+    automatic: true,
+    visualTracerLength: 10.5,
+    visualTracerThickness: 0.018,
+    visualTracerColor: 0xfff6cb,
+    visualTracerLife: 0.04
   }
 ];
 
@@ -277,7 +289,11 @@ export function createWeaponController() {
       label: weapon.label,
       shortLabel: weapon.shortLabel,
       range: weapon.range,
-      hitRadius: weapon.hitRadius
+      hitRadius: weapon.hitRadius,
+      visualTracerLength: weapon.visualTracerLength,
+      visualTracerThickness: weapon.visualTracerThickness,
+      visualTracerColor: weapon.visualTracerColor,
+      visualTracerLife: weapon.visualTracerLife
     };
   }
 

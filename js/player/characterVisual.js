@@ -87,8 +87,6 @@ function createWeaponModel(type, firstPerson = false) {
 
   let body;
   let barrel;
-  let stock = null;
-  let mag = null;
   let muzzleZ = 0.6;
 
   if (type === "pistol") {
@@ -132,7 +130,7 @@ function createWeaponModel(type, firstPerson = false) {
     barrel.position.z = 0.42;
     group.add(barrel);
 
-    stock = new THREE.Mesh(
+    const stock = new THREE.Mesh(
       new THREE.BoxGeometry(0.12, 0.18, 0.36),
       darkMat
     );
@@ -164,14 +162,14 @@ function createWeaponModel(type, firstPerson = false) {
     barrel.position.z = 0.44;
     group.add(barrel);
 
-    stock = new THREE.Mesh(
+    const stock = new THREE.Mesh(
       new THREE.BoxGeometry(0.12, 0.18, 0.34),
       darkMat
     );
     stock.position.set(0, -0.02, -0.46);
     group.add(stock);
 
-    mag = new THREE.Mesh(
+    const mag = new THREE.Mesh(
       new THREE.BoxGeometry(0.09, 0.24, 0.16),
       metalMat
     );
@@ -205,6 +203,69 @@ function createWeaponModel(type, firstPerson = false) {
     muzzleAnchor,
     flash
   };
+}
+
+function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
+  if (weaponId === "pistol") {
+    return {
+      armLeftX: -0.76 + bob * 0.05 + walkSway * 0.08,
+      armRightX: -1.22 - recoil * 0.36 + bob * 0.05,
+      armLeftZ: 0.12,
+      armRightZ: -0.08,
+
+      handX: 0.08,
+      handY: -0.34 + bob * 0.03,
+      handZ: 0.17 - recoil * 0.04,
+
+      handRotX: -1.24 - recoil * 0.14,
+      handRotY: Math.PI / 2 - 0.05,
+      handRotZ: -0.08
+    };
+  }
+
+  const longGunForward = weaponId === "shotgun" ? 0.24 : 0.3;
+
+  return {
+    armLeftX: -1.02 - recoil * 0.1 + bob * 0.04,
+    armRightX: -1.34 - recoil * 0.26 + bob * 0.04,
+    armLeftZ: 0.28,
+    armRightZ: -0.12,
+
+    handX: 0.1,
+    handY: -0.29 + bob * 0.02,
+    handZ: longGunForward - recoil * 0.05,
+
+    handRotX: -1.46 - recoil * 0.16,
+    handRotY: Math.PI / 2 - 0.04,
+    handRotZ: -0.1
+  };
+}
+
+function applyThirdPersonWeaponAlignment(weapon, weaponId) {
+  weapon.group.position.set(0, 0, 0);
+  weapon.group.rotation.set(0, -Math.PI / 2, 0);
+
+  if (weaponId === "pistol") {
+    weapon.group.position.set(0.02, -0.01, 0.02);
+    weapon.group.rotation.z = 0.04;
+    return;
+  }
+
+  if (weaponId === "shotgun") {
+    weapon.group.position.set(0.02, -0.02, 0.08);
+    weapon.group.rotation.z = 0.03;
+    return;
+  }
+
+  if (weaponId === "rifle") {
+    weapon.group.position.set(0.02, -0.02, 0.1);
+    weapon.group.rotation.z = 0.03;
+  }
+}
+
+function resetWeaponTransforms(weapon) {
+  weapon.group.position.set(0, 0, 0);
+  weapon.group.rotation.set(0, 0, 0);
 }
 
 export function createPlayerCharacter() {
@@ -427,7 +488,8 @@ export function createPlayerCharacter() {
 
     tempPosition: new THREE.Vector3(),
     tempLookAt: new THREE.Vector3(),
-    tempForward: new THREE.Vector3()
+    tempForward: new THREE.Vector3(),
+    tempQuaternion: new THREE.Quaternion()
   };
 
   return group;
@@ -454,6 +516,36 @@ export function getPlayerCharacterFirstPersonCameraPose(
     position: rig.tempPosition.clone(),
     lookAt: rig.tempLookAt.clone()
   };
+}
+
+export function getPlayerCharacterWeaponMuzzlePose(character) {
+  const rig = character.userData.characterRig;
+  if (!rig) return null;
+
+  const weaponSets = rig.forceHiddenForFirstPerson
+    ? [rig.firstPersonWeapons]
+    : [rig.thirdPersonWeapons, rig.firstPersonWeapons];
+
+  for (const set of weaponSets) {
+    for (const weapon of Object.values(set)) {
+      if (!weapon.group.visible) continue;
+
+      weapon.muzzleAnchor.getWorldPosition(rig.tempPosition);
+      weapon.muzzleAnchor.getWorldQuaternion(rig.tempQuaternion);
+
+      rig.tempForward
+        .set(0, 0, 1)
+        .applyQuaternion(rig.tempQuaternion)
+        .normalize();
+
+      return {
+        position: rig.tempPosition.clone(),
+        forward: rig.tempForward.clone()
+      };
+    }
+  }
+
+  return null;
 }
 
 export function resetPlayerCharacterVisual(character) {
@@ -487,11 +579,13 @@ export function resetPlayerCharacterVisual(character) {
   }
 
   for (const weapon of Object.values(rig.thirdPersonWeapons)) {
+    resetWeaponTransforms(weapon);
     weapon.group.visible = false;
     weapon.flash.visible = false;
   }
 
   for (const weapon of Object.values(rig.firstPersonWeapons)) {
+    resetWeaponTransforms(weapon);
     weapon.group.visible = false;
     weapon.flash.visible = false;
   }
@@ -531,15 +625,16 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   }
 
   rig.shadow.visible = !inFirstPerson;
-
   rig.pizzaBox.visible = carryingPizza && !inFirstPerson;
 
   for (const weapon of Object.values(rig.thirdPersonWeapons)) {
+    resetWeaponTransforms(weapon);
     weapon.group.visible = false;
     weapon.flash.visible = false;
   }
 
   for (const weapon of Object.values(rig.firstPersonWeapons)) {
+    resetWeaponTransforms(weapon);
     weapon.group.visible = false;
     weapon.flash.visible = false;
   }
@@ -587,23 +682,35 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     rig.legLeftPivot.rotation.x = legSwing * 0.82;
     rig.legRightPivot.rotation.x = -legSwing * 0.82;
 
-    rig.armLeftPivot.rotation.x = -0.48 + bob * 0.12;
-    rig.armRightPivot.rotation.x = -1.02 - recoil + bob * 0.08;
-    rig.armLeftPivot.rotation.z = -0.12;
-    rig.armRightPivot.rotation.z = -0.08;
+    const aimPose = getThirdPersonWeaponPose(
+      weaponState.equippedId,
+      bob,
+      recoil,
+      legSwing * 0.14
+    );
+
+    rig.armLeftPivot.rotation.set(aimPose.armLeftX, 0, aimPose.armLeftZ);
+    rig.armRightPivot.rotation.set(aimPose.armRightX, 0, aimPose.armRightZ);
 
     rig.weaponHandRoot.position.set(
-      0.04,
-      -0.58 + bob * 0.06,
-      0.02 - recoil * 0.04
+      aimPose.handX,
+      aimPose.handY,
+      aimPose.handZ
+    );
+
+    rig.weaponHandRoot.rotation.set(
+      aimPose.handRotX,
+      aimPose.handRotY,
+      aimPose.handRotZ
     );
 
     if (!inFirstPerson) {
       const active = rig.thirdPersonWeapons[weaponState.equippedId];
       if (active) {
+        applyThirdPersonWeaponAlignment(active, weaponState.equippedId);
         active.group.visible = true;
         active.flash.visible = muzzlePulse > 0.08;
-        active.flash.scale.setScalar(1 + muzzlePulse * 1.1);
+        active.flash.scale.setScalar(1 + muzzlePulse * 1.16);
       }
     } else {
       const active = rig.firstPersonWeapons[weaponState.equippedId];

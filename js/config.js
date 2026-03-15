@@ -61,8 +61,8 @@ export const CONFIG = {
     walkLookHeight: 1.3,
     walkSideOffset: 0.48,
 
-    firstPersonPositionDamping: 18,
-    firstPersonLookDamping: 20,
+    firstPersonPositionDamping: 14,
+    firstPersonLookDamping: 10,
     drivingFirstPersonLookDistance: 28,
     walkingFirstPersonLookDistance: 12,
 
@@ -91,8 +91,8 @@ export const CONFIG = {
   },
 
   decor: {
-    movingPedestrians: 14,
-    staticPedestrians: 110,
+    movingPedestrians: 88,
+    staticPedestrians: 360,
     parkedCars: 26,
     treeSpacing: 42,
     lampSpacing: 78
