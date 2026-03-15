@@ -252,6 +252,7 @@ function createAdvanceFuelSign(station) {
 
 function createGasStationVisual(station) {
   const group = new THREE.Group();
+  group.userData.editorRemovable = true;
 
   const serviceLot = new THREE.Mesh(
     new THREE.BoxGeometry(64, 0.14, 38),
@@ -705,6 +706,7 @@ export function createGasStationController(scene, graph) {
       stationMap.set(station.id, station);
 
       const visual = createGasStationVisual(station);
+      station.visual = visual;
       scene.add(visual);
     }
   }
@@ -717,6 +719,7 @@ export function createGasStationController(scene, graph) {
     let bestScore = Infinity;
 
     for (const station of stations) {
+      if (!station.visual?.parent) continue;
       if (!sameRoad(segment, station.road)) continue;
 
       const longitudinalDelta = station.entryS - s;
@@ -751,6 +754,7 @@ export function createGasStationController(scene, graph) {
   function createEntrySegment(playerPose, currentSegment, currentS = 0, laneOffset = 0, stationId) {
     const station = stationMap.get(stationId);
     if (!station) return null;
+    if (!station.visual?.parent) return null;
 
     const sameCurrentRoad = sameRoad(currentSegment, station.road);
 
@@ -810,6 +814,7 @@ export function createGasStationController(scene, graph) {
   function buildAfterSpecialSegment(segment) {
     const station = stationMap.get(segment.stationId);
     if (!station) return null;
+    if (!station.visual?.parent) return null;
 
     if (segment.type === "gas-entry") {
       return {
@@ -844,6 +849,16 @@ export function createGasStationController(scene, graph) {
     return evaluatePathSegment(segment, distanceAlongSegment);
   }
 
+  function getInfos() {
+    return stations
+      .filter((station) => station.visual?.parent)
+      .map((station) => ({
+        id: station.id,
+        brand: station.brand,
+        center: { ...station.apronCenter }
+      }));
+  }
+
   return {
     build,
     isReservedArea,
@@ -851,6 +866,7 @@ export function createGasStationController(scene, graph) {
     createEntrySegment,
     buildAfterSpecialSegment,
     evaluateSegment,
-    isGasStationSegment
+    isGasStationSegment,
+    getInfos
   };
 }

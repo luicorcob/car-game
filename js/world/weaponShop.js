@@ -125,6 +125,7 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
 
   const reservedAreas = [];
   const roofObjects = [];
+  let shellGroup = null;
   let counterPoint = { x: center.x, z: center.z };
   let interiorBounds = null;
   let built = false;
@@ -156,6 +157,8 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
 
   function buildShell() {
     const group = new THREE.Group();
+    group.userData.editorRemovable = true;
+    shellGroup = group;
     group.position.set(center.x, 0, center.z);
     group.rotation.y = rotY;
 
@@ -347,6 +350,8 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
 
     scene.add(group);
 
+    hooks.beginEditorObject?.(group);
+
     registerBoxCollider(0, -dims.depth * 0.5, dims.width, dims.wallThickness + 0.18, { tag: "weaponshop-wall" });
     registerBoxCollider(-dims.width * 0.5, 0, dims.wallThickness + 0.18, dims.depth, { tag: "weaponshop-wall" });
     registerBoxCollider(dims.width * 0.5, 0, dims.wallThickness + 0.18, dims.depth, { tag: "weaponshop-wall" });
@@ -373,6 +378,8 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
       registerCircleCollider(x, z, 1.05, { tag: "weaponshop-crate" });
     }
 
+    hooks.endEditorObject?.(group);
+
     counterPoint = localToWorld(center, rotY, 0, -4.55);
 
     interiorBounds = {
@@ -392,7 +399,7 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
   }
 
   function isInsideInterior(playerPose) {
-    if (!playerPose || !interiorBounds) return false;
+    if (!playerPose || !interiorBounds || !shellGroup?.parent) return false;
 
     const local = worldToLocal(center, rotY, playerPose.x, playerPose.z);
     return (
@@ -405,6 +412,7 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
 
   function isNearCounter(playerPose, radius = 2.3) {
     if (!playerPose) return false;
+    if (!shellGroup?.parent) return false;
     if (!isInsideInterior(playerPose)) return false;
 
     const dx = playerPose.x - counterPoint.x;
@@ -419,11 +427,13 @@ export function createWeaponShopController(scene, graph, hooks = {}) {
   }
 
   function update(playerPose, playerMode) {
+    if (!shellGroup?.parent) return;
     const hideRoof = playerMode === "walking" && isInsideInterior(playerPose);
     setRoofHidden(hideRoof);
   }
 
   function getInfo() {
+    if (!shellGroup?.parent) return null;
     return {
       id: "weapon_shop_atlas",
       label: "Armería Atlas",

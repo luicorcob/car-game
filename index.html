@@ -26,6 +26,7 @@
       <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
       <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
       <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
+      <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
     <div class="panel hud">
@@ -94,6 +95,77 @@
     <h2>Fin</h2>
     <p>Pulsa <strong>R</strong> para reiniciar</p>
   </div>
+
+  <aside id="editor-panel" class="editor-panel hidden">
+    <div class="editor-shell">
+      <div class="editor-top">
+        <div>
+          <div class="editor-kicker">MODO CREADOR</div>
+          <h2>City Builder</h2>
+        </div>
+        <button id="editor-close" class="editor-close" type="button">Volver al juego</button>
+      </div>
+
+      <p class="editor-summary">
+        Diseña tu ciudad con una rejilla visual. Todo lo que coloques se puede guardar en JSON y volver a cargar.
+      </p>
+
+      <div class="editor-section">
+        <div class="editor-section-title">Piezas</div>
+        <div id="editor-palette" class="editor-palette"></div>
+      </div>
+
+      <div class="editor-section editor-status">
+        <div class="editor-status-row">
+          <span>Objeto</span>
+          <strong id="editor-selected-label">Ninguno</strong>
+        </div>
+        <div class="editor-status-row">
+          <span>Posición</span>
+          <strong id="editor-cursor-label">0, 0</strong>
+        </div>
+        <div class="editor-status-row">
+          <span>Rotación</span>
+          <strong id="editor-rotation-label">0°</strong>
+        </div>
+        <div class="editor-status-row">
+          <span>Objetos</span>
+          <strong id="editor-count-label">0</strong>
+        </div>
+      </div>
+
+      <div class="editor-section">
+        <div class="editor-section-title">Acciones</div>
+        <input
+          id="editor-layout-name"
+          class="editor-input"
+          type="text"
+          maxlength="28"
+          placeholder="Nombre de la escena"
+        />
+        <div class="editor-actions">
+          <button id="editor-rotate" type="button">Rotar</button>
+          <button id="editor-clear" type="button">Vaciar</button>
+          <button id="editor-save-slot" type="button">Guardar escena</button>
+          <button id="editor-load-slot" type="button">Cargar escena</button>
+          <button id="editor-delete-slot" type="button">Borrar escena</button>
+        </div>
+        <div id="editor-layout-list" class="editor-layout-list"></div>
+      </div>
+
+      <div class="editor-section">
+        <div class="editor-section-title">Ayuda rápida</div>
+        <div class="editor-help">
+          <div><strong>M</strong> abrir/cerrar creador</div>
+          <div><strong>WASD / flechas</strong> mover cámara</div>
+          <div><strong>R</strong> rotar pieza</div>
+          <div><strong>Click izquierdo</strong> colocar</div>
+          <div><strong>Click derecho</strong> borrar</div>
+          <div><strong>Rueda</strong> zoom</div>
+        </div>
+      </div>
+    </div>
+  </aside>
 
   <canvas id="game"></canvas>
 

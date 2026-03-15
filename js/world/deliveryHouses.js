@@ -42,6 +42,7 @@ function localToWorld(center, rotY, x, z) {
 
 function createHouseVisual(def) {
   const group = new THREE.Group();
+  group.userData.editorRemovable = true;
   group.position.set(def.x, 0, def.z);
   group.rotation.y = def.rotY;
 
@@ -289,6 +290,8 @@ export function createDeliveryHousesController(scene, graph, hooks = {}) {
     const visual = createHouseVisual(def);
     scene.add(visual.group);
 
+    hooks.beginEditorObject?.(visual.group);
+
     const doorPoint = localToWorld(
       { x: def.x, z: def.z },
       def.rotY,
@@ -305,6 +308,7 @@ export function createDeliveryHousesController(scene, graph, hooks = {}) {
 
     registerBoxCollider(def.x, def.z, 11.2, 9.1, { tag: "delivery-house" });
     registerCircleCollider(doorPoint.x, doorPoint.z, 0.95, { tag: "delivery-door" });
+    hooks.endEditorObject?.(visual.group);
     registerReservedArea(def.x, def.z, 22);
 
     const house = {
@@ -327,21 +331,25 @@ export function createDeliveryHousesController(scene, graph, hooks = {}) {
     activeHouseId = houseId ?? null;
 
     for (const house of houseMap.values()) {
-      house.visual.marker.visible = house.id === activeHouseId;
+      house.visual.marker.visible = house.visual.group.parent && house.id === activeHouseId;
     }
   }
 
   function getHouseById(houseId) {
-    return houseMap.get(houseId) ?? null;
+    const house = houseMap.get(houseId) ?? null;
+    if (!house?.visual.group.parent) return null;
+    return house;
   }
 
   function getHouses() {
-    return Array.from(houseMap.values()).map((house) => ({
+    return Array.from(houseMap.values())
+      .filter((house) => house.visual.group.parent)
+      .map((house) => ({
       id: house.id,
       label: house.label,
       doorPoint: { ...house.doorPoint },
       porchPoint: { ...house.porchPoint }
-    }));
+      }));
   }
 
   function getActiveHouse() {

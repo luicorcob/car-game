@@ -160,6 +160,7 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
 
   const reservedAreas = [];
   const roofObjects = [];
+  let shellGroup = null;
   let pickupPoint = { x: center.x, z: center.z };
   let interiorBounds = null;
   let built = false;
@@ -198,6 +199,8 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
 
   function createShell() {
     const group = new THREE.Group();
+    group.userData.editorRemovable = true;
+    shellGroup = group;
     group.position.set(center.x, 0, center.z);
     group.rotation.y = rotY;
 
@@ -445,6 +448,8 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
 
     scene.add(group);
 
+    hooks.beginEditorObject?.(group);
+
     registerBoxCollider(0, -dims.depth * 0.5, dims.width, dims.wallThickness + 0.18, { tag: "pizzeria-wall" });
     registerBoxCollider(-dims.width * 0.5, 0, dims.wallThickness + 0.18, dims.depth, { tag: "pizzeria-wall" });
     registerBoxCollider(dims.width * 0.5, 0, dims.wallThickness + 0.18, dims.depth, { tag: "pizzeria-wall" });
@@ -468,6 +473,8 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
       registerCircleCollider(x, z, 1.18, { tag: "pizzeria-table" });
     }
 
+    hooks.endEditorObject?.(group);
+
     pickupPoint = localToWorld(center, rotY, 0, -4.9);
 
     interiorBounds = {
@@ -487,7 +494,7 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
   }
 
   function isInsideInterior(playerPose) {
-    if (!playerPose) return false;
+    if (!playerPose || !shellGroup?.parent) return false;
 
     const local = worldToLocal(center, rotY, playerPose.x, playerPose.z);
     return (
@@ -500,6 +507,7 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
 
   function isNearPickup(playerPose, radius = 2.25) {
     if (!playerPose) return false;
+    if (!shellGroup?.parent) return false;
     if (!isInsideInterior(playerPose)) return false;
 
     const dx = playerPose.x - pickupPoint.x;
@@ -514,11 +522,13 @@ export function createPizzeriaController(scene, graph, hooks = {}) {
   }
 
   function update(playerPose, playerMode) {
+    if (!shellGroup?.parent) return;
     const hideRoof = playerMode === "walking" && isInsideInterior(playerPose);
     setRoofHidden(hideRoof);
   }
 
   function getInfo() {
+    if (!shellGroup?.parent) return null;
     return {
       id: "pizzeria_vesuvio",
       label: "Pizzería Vesuvio",

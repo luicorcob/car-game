@@ -3,6 +3,7 @@ import { CONFIG } from "./config.js";
 import { createInput } from "./input.js";
 import { createWorld } from "./world.js";
 import { createCameraController } from "./cameraController.js";
+import { createEditorMode } from "./editor/editorMode.js";
 import {
   createPlayerCar,
   attachPlayerCarEffects,
@@ -23,6 +24,20 @@ const moneyEl = document.querySelector("#money");
 const statusEl = document.querySelector("#status");
 const cameraModeEl = document.querySelector("#camera-mode");
 const gameOverEl = document.querySelector("#game-over");
+const editorPanelEl = document.querySelector("#editor-panel");
+const editorPaletteEl = document.querySelector("#editor-palette");
+const editorSelectedLabelEl = document.querySelector("#editor-selected-label");
+const editorCursorLabelEl = document.querySelector("#editor-cursor-label");
+const editorRotationLabelEl = document.querySelector("#editor-rotation-label");
+const editorCountLabelEl = document.querySelector("#editor-count-label");
+const editorRotateBtn = document.querySelector("#editor-rotate");
+const editorClearBtn = document.querySelector("#editor-clear");
+const editorLayoutNameEl = document.querySelector("#editor-layout-name");
+const editorSaveSlotBtn = document.querySelector("#editor-save-slot");
+const editorLoadSlotBtn = document.querySelector("#editor-load-slot");
+const editorDeleteSlotBtn = document.querySelector("#editor-delete-slot");
+const editorLayoutListEl = document.querySelector("#editor-layout-list");
+const editorCloseBtn = document.querySelector("#editor-close");
 
 const fuelCardEl = document.querySelector("#fuel-card");
 const fuelPercentEl = document.querySelector("#fuel-percent");
@@ -93,6 +108,31 @@ const cameraController = createCameraController(camera, lookTarget);
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
+
+const editor = createEditorMode(
+  scene,
+  camera,
+  renderer,
+  {
+    panelEl: editorPanelEl,
+    paletteEl: editorPaletteEl,
+    selectedLabelEl: editorSelectedLabelEl,
+    cursorLabelEl: editorCursorLabelEl,
+    rotationLabelEl: editorRotationLabelEl,
+    countLabelEl: editorCountLabelEl,
+    rotateBtn: editorRotateBtn,
+    clearBtn: editorClearBtn,
+    layoutNameEl: editorLayoutNameEl,
+    saveSlotBtn: editorSaveSlotBtn,
+    loadSlotBtn: editorLoadSlotBtn,
+    deleteSlotBtn: editorDeleteSlotBtn,
+    layoutListEl: editorLayoutListEl,
+    closeBtn: editorCloseBtn,
+  },
+  {
+    removeWorldObject: world.removeEditorObject
+  }
+);
 
 function worldToMap(x, z) {
   const px = ((x + MAP_EXTENT) / (MAP_EXTENT * 2)) * MAP_SIZE;
@@ -409,6 +449,23 @@ function animate() {
   requestAnimationFrame(animate);
 
   const dt = Math.min(clock.getDelta(), 1 / 20);
+
+  if (editor.consumeToggleRequested()) {
+    if (editor.isActive()) {
+      editor.exit();
+    } else {
+      editor.enter();
+    }
+  }
+
+  if (editor.isActive()) {
+    input.restart = false;
+    input.toggleNight = false;
+    input.toggleFirstPerson = false;
+    editor.update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
 
   if (input.toggleNight) {
     world.setNightMode(!world.isNightMode());

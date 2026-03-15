@@ -101,9 +101,11 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
             b.h,
             b.rot
           );
+          building.userData.editorRemovable = true;
           building.position.set(b.x, 0, b.z);
           scene.add(building);
 
+          hooks.beginEditorObject?.(building);
           const rotated = Math.abs(Math.sin(b.rot)) > 0.5;
           registerBoxCollider(
             b.x,
@@ -112,6 +114,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
             rotated ? b.w : b.d,
             { tag: "decor-building" }
           );
+          hooks.endEditorObject?.(building);
         });
 
         for (let i = 0; i < 4; i++) {
@@ -173,11 +176,15 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4f2a });
     const crownMat = new THREE.MeshStandardMaterial({ color: 0x2f7d32 });
 
+    const treeGroup = new THREE.Group();
+    treeGroup.userData.editorRemovable = true;
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treePlacements.length);
     const crowns = new THREE.InstancedMesh(crownGeo, crownMat, treePlacements.length);
+    treeGroup.add(trunks, crowns);
 
     const dummy = new THREE.Object3D();
 
+    hooks.beginEditorObject?.(treeGroup);
     treePlacements.forEach((p, i) => {
       dummy.position.set(p.x, 1.3, p.z);
       dummy.rotation.set(0, (i % 7) * 0.31, 0);
@@ -193,8 +200,9 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
       registerCircleCollider(p.x, p.z, 1.05, { tag: "decor-tree" });
     });
+    hooks.endEditorObject?.(treeGroup);
 
-    scene.add(trunks, crowns);
+    scene.add(treeGroup);
 
     const poleGeo = new THREE.CylinderGeometry(0.06, 0.08, 4.8, 10);
     const lampHeadGeo = new THREE.BoxGeometry(0.55, 0.28, 0.55);
@@ -205,8 +213,11 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       emissiveIntensity: 1
     });
 
+    const lampGroup = new THREE.Group();
+    lampGroup.userData.editorRemovable = true;
     const poles = new THREE.InstancedMesh(poleGeo, poleMat, lampPlacements.length);
     const heads = new THREE.InstancedMesh(lampHeadGeo, lampHeadMaterial, lampPlacements.length);
+    lampGroup.add(poles, heads);
 
     lampPlacements.forEach((p, i) => {
       dummy.position.set(p.x, 2.4, p.z);
@@ -221,7 +232,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       heads.setMatrixAt(i, dummy.matrix);
     });
 
-    scene.add(poles, heads);
+    scene.add(lampGroup);
 
     if (hooks.onLampHeadMaterial) {
       hooks.onLampHeadMaterial(lampHeadMaterial);
@@ -270,12 +281,15 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         if (isReserved(x, z, 4.5)) continue;
 
         const car = createParkedCar(colors[Math.floor(rnd() * colors.length)]);
+        car.userData.editorRemovable = true;
         car.position.set(x, 0, z);
         car.rotation.y = rotY;
 
         parkedCars.push(car);
         scene.add(car);
+        hooks.beginEditorObject?.(car);
         registerBoxCollider(x, z, width, depth, { tag: "decor-parked-car" });
+        hooks.endEditorObject?.(car);
         created++;
       }
     }
@@ -329,6 +343,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       }
 
       const ped = createPedestrian(2000 + i * 7);
+      ped.group.userData.editorRemovable = true;
       ped.group.position.copy(start);
       ped.group.rotation.y = heading;
       ped.group.visible = true;
@@ -379,6 +394,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         if (isReserved(x, z, 2.8)) continue;
 
         const ped = createPedestrian(9000 + created * 13);
+        ped.group.userData.editorRemovable = true;
         ped.group.position.set(x, 0, z);
         ped.group.rotation.y = rnd() * Math.PI * 2;
 

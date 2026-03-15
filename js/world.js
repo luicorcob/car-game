@@ -17,6 +17,7 @@ function addStaticRoadNetwork(scene, graph) {
     const east = graph.getNeighbor(node.id, "E");
     if (east) {
       const mesh = createStraightRoadMesh(roadLength, true);
+      mesh.userData.editorRemovable = true;
       mesh.position.set((node.x + east.x) / 2, 0, node.z);
       scene.add(mesh);
     }
@@ -24,6 +25,7 @@ function addStaticRoadNetwork(scene, graph) {
     const north = graph.getNeighbor(node.id, "N");
     if (north) {
       const mesh = createStraightRoadMesh(roadLength, false);
+      mesh.userData.editorRemovable = true;
       mesh.position.set(node.x, 0, (node.z + north.z) / 2);
       scene.add(mesh);
     }
@@ -31,6 +33,7 @@ function addStaticRoadNetwork(scene, graph) {
 
   for (const node of graph.nodes.values()) {
     const cross = createIntersectionMesh();
+    cross.userData.editorRemovable = true;
     cross.position.set(node.x, 0, node.z);
     scene.add(cross);
   }
@@ -42,13 +45,24 @@ export function createWorld(scene) {
 
   const boxColliders = [];
   const circleColliders = [];
+  let activeEditorOwner = null;
 
   function registerBoxCollider(x, z, width, depth, meta = {}) {
-    boxColliders.push({ x, z, width, depth, meta });
+    boxColliders.push({ x, z, width, depth, meta, owner: activeEditorOwner });
   }
 
   function registerCircleCollider(x, z, radius, meta = {}) {
-    circleColliders.push({ x, z, radius, meta });
+    circleColliders.push({ x, z, radius, meta, owner: activeEditorOwner });
+  }
+
+  function beginEditorObject(owner) {
+    activeEditorOwner = owner ?? null;
+  }
+
+  function endEditorObject(owner = null) {
+    if (!owner || activeEditorOwner === owner) {
+      activeEditorOwner = null;
+    }
   }
 
   function isReservedArea(x, z, padding = 0) {
@@ -67,19 +81,25 @@ export function createWorld(scene) {
 
   const pizzeria = createPizzeriaController(scene, graph, {
     registerBoxCollider,
-    registerCircleCollider
+    registerCircleCollider,
+    beginEditorObject,
+    endEditorObject
   });
   pizzeria.build();
 
   const weaponShop = createWeaponShopController(scene, graph, {
     registerBoxCollider,
-    registerCircleCollider
+    registerCircleCollider,
+    beginEditorObject,
+    endEditorObject
   });
   weaponShop.build();
 
   const deliveryHouses = createDeliveryHousesController(scene, graph, {
     registerBoxCollider,
-    registerCircleCollider
+    registerCircleCollider,
+    beginEditorObject,
+    endEditorObject
   });
   deliveryHouses.build();
 
@@ -87,7 +107,9 @@ export function createWorld(scene) {
     onLampHeadMaterial: lighting.registerLampHeadMaterial,
     isReservedArea,
     registerBoxCollider,
-    registerCircleCollider
+    registerCircleCollider,
+    beginEditorObject,
+    endEditorObject
   });
   decor.build();
 
@@ -206,6 +228,28 @@ export function createWorld(scene) {
     deliveryHouses.update(dt);
   }
 
+  function removeEditorObject(object) {
+    if (!object) return false;
+
+    if (object.parent) {
+      object.parent.remove(object);
+    }
+
+    for (let i = boxColliders.length - 1; i >= 0; i--) {
+      if (boxColliders[i].owner === object) {
+        boxColliders.splice(i, 1);
+      }
+    }
+
+    for (let i = circleColliders.length - 1; i >= 0; i--) {
+      if (circleColliders[i].owner === object) {
+        circleColliders.splice(i, 1);
+      }
+    }
+
+    return true;
+  }
+
   return {
     laneCenters: graph.laneCenters,
     laneClamp: graph.laneClamp,
@@ -250,6 +294,7 @@ export function createWorld(scene) {
     isPlayerNearWeaponShopCounter: weaponShop.isNearCounter,
 
     getPedestrianTargets: decor.getPedestrianTargets,
-    destroyPedestrian: decor.destroyPedestrian
+    destroyPedestrian: decor.destroyPedestrian,
+    removeEditorObject
   };
 }
