@@ -102,7 +102,14 @@ export const CONFIG = {
   world: {
     grassSize: 2400,
     fogNear: 140,
-    fogFar: 1200
+    fogFar: 1200,
+    cullFovPaddingRad: 0.6,
+    cullDistanceBuildings: 520,
+    cullDistanceParkedCars: 320,
+    cullDistancePedestrians: 240,
+    pedestrianNearUpdateDistance: 90,
+    pedestrianMidUpdateDistance: 170,
+    pedestrianFarStepSeconds: 0.24
   },
 
   decor: {

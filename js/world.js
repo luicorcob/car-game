@@ -270,7 +270,7 @@ export function createWorld(scene) {
     resolveCharacterMotion,
 
     updateChoiceSigns: signs.updateChoiceSigns,
-    updateDecorations: decor.updateDecorations,
+    updateDecorations: (dt, context = null) => decor.updateDecorations(dt, context),
     updateInteractivePlaces,
 
     setNightMode: lighting.setNightMode,

@@ -571,7 +571,10 @@ function animate() {
     state.playerMode === "driving" ? state.vehiclePose : state.playerPose,
     state.playerMode === "driving" ? state.upcomingIntersection : null
   );
-  world.updateDecorations(dt);
+  world.updateDecorations(dt, {
+    camera,
+    playerPose: state.playerPose
+  });
 
   updatePlayerCarEffects(playerCar, dt, {
     nightMode: world.isNightMode(),
