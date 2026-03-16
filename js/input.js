@@ -26,6 +26,7 @@ export function createInput() {
     KeyD: "right",
     ArrowUp: "accelerate",
     KeyW: "accelerate",
+    KeyZ: "accelerate",
     ArrowDown: "brake",
     KeyS: "brake",
     KeyR: "restart",
@@ -43,6 +44,23 @@ export function createInput() {
     KeyX: "fire"
   };
 
+  function isTypingTarget(target) {
+    if (!target) return false;
+    const tagName = target.tagName?.toLowerCase?.();
+    if (!tagName) return false;
+    if (tagName === "input" || tagName === "textarea" || tagName === "select") {
+      return true;
+    }
+    return !!target.isContentEditable;
+  }
+
+  function pulse(action) {
+    input[action] = true;
+    setTimeout(() => {
+      input[action] = false;
+    }, 0);
+  }
+
   function setKey(code, value) {
     const action = keyMap[code];
     if (!action) return;
@@ -50,6 +68,8 @@ export function createInput() {
   }
 
   window.addEventListener("keydown", (event) => {
+    if (isTypingTarget(event.target)) return;
+
     if (event.code === "KeyN") {
       if (!event.repeat) {
         input.toggleNight = true;
@@ -57,7 +77,7 @@ export function createInput() {
       return;
     }
 
-    if (event.code === "KeyV") {
+    if (event.code === "KeyV" || event.code === "KeyC") {
       if (!event.repeat) {
         input.toggleFirstPerson = true;
       }
@@ -68,11 +88,12 @@ export function createInput() {
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyN" || event.code === "KeyV") return;
+    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC") return;
     setKey(event.code, false);
   });
 
   window.addEventListener("mousedown", (event) => {
+    if (isTypingTarget(event.target)) return;
     if (event.button === 0) {
       input.fire = true;
     }
@@ -84,10 +105,26 @@ export function createInput() {
     }
   });
 
+  window.addEventListener("wheel", (event) => {
+    if (isTypingTarget(event.target)) return;
+    if (Math.abs(event.deltaY) < 0.01) return;
+    if (event.deltaY > 0) {
+      pulse("shopNext");
+    } else {
+      pulse("shopPrev");
+    }
+  }, { passive: true });
+
   window.addEventListener("blur", () => {
     for (const key of Object.keys(input)) {
       if (key === "toggleNight" || key === "toggleFirstPerson") continue;
       input[key] = false;
+    }
+  });
+
+  document.addEventListener("pointerlockchange", () => {
+    if (!document.pointerLockElement) {
+      input.fire = false;
     }
   });
 

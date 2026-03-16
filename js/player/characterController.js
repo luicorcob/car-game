@@ -15,6 +15,7 @@ export function createCharacterController(world) {
     verticalVelocity: 0,
     jumpOffset: 0,
     onGround: true,
+    coyoteTime: 0,
 
     moveX: 0,
     moveZ: 0,
@@ -29,6 +30,7 @@ export function createCharacterController(world) {
     state.verticalVelocity = 0;
     state.jumpOffset = 0;
     state.onGround = true;
+    state.coyoteTime = 0;
     state.moveX = 0;
     state.moveZ = 0;
     state.prevJump = false;
@@ -42,19 +44,30 @@ export function createCharacterController(world) {
       planarSpeed: state.planarSpeed,
       jumpOffset: state.jumpOffset,
       onGround: state.onGround,
+      coyoteTime: state.coyoteTime,
       moveX: state.moveX,
       moveZ: state.moveZ
     };
   }
 
-  function update(input, dt, extraColliders = []) {
+  function update(input, dt, extraColliders = [], control = null) {
+    const useFirstPersonMovement = !!control?.firstPerson;
+    const thirdPersonTurnSensitivity =
+      typeof control?.thirdPersonTurnSensitivity === "number"
+        ? control.thirdPersonTurnSensitivity
+        : 1;
+    const moveHeading =
+      typeof control?.moveHeading === "number"
+        ? control.moveHeading
+        : state.heading;
+
     const inputForward = (input.accelerate ? 1 : 0) + (input.brake ? -1 : 0);
     const inputRight = (input.right ? 1 : 0) + (input.left ? -1 : 0);
 
-    const forwardX = Math.sin(state.heading);
-    const forwardZ = -Math.cos(state.heading);
-    const rightX = Math.cos(state.heading);
-    const rightZ = Math.sin(state.heading);
+    const forwardX = Math.sin(moveHeading);
+    const forwardZ = -Math.cos(moveHeading);
+    const rightX = Math.cos(moveHeading);
+    const rightZ = Math.sin(moveHeading);
 
     let moveX = rightX * inputRight + forwardX * inputForward;
     let moveZ = rightZ * inputRight + forwardZ * inputForward;
@@ -102,21 +115,31 @@ export function createCharacterController(world) {
     state.moveX = moveX;
     state.moveZ = moveZ;
 
-    if (isMoving) {
-      const targetHeading = Math.atan2(moveX, -moveZ);
+    const shouldUpdateHeading = useFirstPersonMovement || isMoving;
+    if (shouldUpdateHeading) {
+      const targetHeading = useFirstPersonMovement
+        ? moveHeading
+        : Math.atan2(moveX, -moveZ);
       const delta = normalizeAngle(targetHeading - state.heading);
+      const turnSpeed = useFirstPersonMovement
+        ? CONFIG.onFoot.turnSpeed * 2
+        : CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity;
 
       state.heading = normalizeAngle(
-        state.heading + delta * Math.min(1, CONFIG.onFoot.turnSpeed * dt)
+        state.heading + delta * Math.min(1, turnSpeed * dt)
       );
     }
 
     const jumpPressed = !!input.jump;
     const jumpJustPressed = jumpPressed && !state.prevJump;
+    state.coyoteTime = state.onGround
+      ? 0.08
+      : Math.max(0, state.coyoteTime - dt);
 
-    if (jumpJustPressed && state.onGround) {
+    if (jumpJustPressed && (state.onGround || state.coyoteTime > 0)) {
       state.verticalVelocity = CONFIG.onFoot.jumpVelocity;
       state.onGround = false;
+      state.coyoteTime = 0;
     }
 
     state.prevJump = jumpPressed;
@@ -129,6 +152,7 @@ export function createCharacterController(world) {
         state.jumpOffset = 0;
         state.verticalVelocity = 0;
         state.onGround = true;
+        state.coyoteTime = 0.08;
       }
     }
 
