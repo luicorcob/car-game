@@ -57,6 +57,13 @@ const weaponAmmoEl = document.querySelector("#weapon-ammo");
 const weaponStateEl = document.querySelector("#weapon-state");
 
 const promptEl = document.querySelector("#prompt");
+const cameraSettingsPanelEl = document.querySelector("#camera-settings");
+const settingsToggleEl = document.querySelector("#settings-toggle");
+const fpSensEl = document.querySelector("#fp-sens");
+const fpSensValueEl = document.querySelector("#fp-sens-value");
+const tpSensEl = document.querySelector("#tp-sens");
+const tpSensValueEl = document.querySelector("#tp-sens-value");
+const fpsEl = document.querySelector("#fps");
 
 const navMapTitleEl = document.querySelector("#nav-map-title");
 const navMapStateEl = document.querySelector("#nav-map-state");
@@ -86,6 +93,7 @@ const camera = new THREE.PerspectiveCamera(
 );
 
 const clock = new THREE.Clock();
+let fpsSmoothed = 0;
 
 const input = createInput();
 const world = createWorld(scene);
@@ -105,6 +113,7 @@ const gasStationInfos = world.getGasStationInfos ? world.getGasStationInfos() : 
 
 const lookTarget = new THREE.Vector3();
 const cameraController = createCameraController(camera, lookTarget);
+const CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
@@ -133,6 +142,74 @@ const editor = createEditorMode(
     removeWorldObject: world.removeEditorObject
   }
 );
+
+function readSavedCameraSettings() {
+  try {
+    const raw = localStorage.getItem(CAMERA_SETTINGS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveCameraSettings(settings) {
+  try {
+    localStorage.setItem(CAMERA_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // Ignorado en modo privado o con storage bloqueado.
+  }
+}
+
+function updateCameraSettingsUI(settings) {
+  fpSensEl.value = String(settings.firstPersonSensitivity);
+  tpSensEl.value = String(settings.thirdPersonTurnSensitivity);
+
+  fpSensValueEl.textContent = Number(settings.firstPersonSensitivity).toFixed(4);
+  tpSensValueEl.textContent = `${Number(settings.thirdPersonTurnSensitivity).toFixed(2)}x`;
+}
+
+function applyCameraSettings(nextSettings, persist = true) {
+  cameraController.setSettings(nextSettings);
+  const applied = cameraController.getSettings();
+  updateCameraSettingsUI(applied);
+  if (persist) {
+    saveCameraSettings(applied);
+  }
+}
+
+function setupCameraSettingsPanel() {
+  const saved = readSavedCameraSettings();
+  const defaults = cameraController.getSettings();
+
+  applyCameraSettings(
+    {
+      firstPersonSensitivity: saved?.firstPersonSensitivity ?? defaults.firstPersonSensitivity,
+      thirdPersonTurnSensitivity: saved?.thirdPersonTurnSensitivity ?? defaults.thirdPersonTurnSensitivity
+    },
+    false
+  );
+
+  fpSensEl.addEventListener("input", () => {
+    applyCameraSettings({
+      firstPersonSensitivity: Number(fpSensEl.value)
+    });
+  });
+
+  tpSensEl.addEventListener("input", () => {
+    applyCameraSettings({
+      thirdPersonTurnSensitivity: Number(tpSensEl.value)
+    });
+  });
+
+  cameraSettingsPanelEl.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+
+  settingsToggleEl.addEventListener("click", () => {
+    cameraSettingsPanelEl.classList.toggle("hidden");
+  });
+}
 
 function worldToMap(x, z) {
   const px = ((x + MAP_EXTENT) / (MAP_EXTENT * 2)) * MAP_SIZE;
@@ -351,6 +428,7 @@ function updateUI(state) {
   speedEl.textContent = state.speedKmh;
   scoreEl.textContent = state.score;
   moneyEl.textContent = `$${state.money}`;
+  fpsEl.textContent = Math.round(fpsSmoothed);
   cameraModeEl.textContent = cameraController.isFirstPerson()
     ? "1ª persona"
     : "3ª persona";
@@ -419,7 +497,8 @@ function restartGame() {
       selectWeapon2: false,
       selectWeapon3: false
     },
-    0
+    0,
+    null
   );
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, 0);
@@ -449,6 +528,8 @@ function animate() {
   requestAnimationFrame(animate);
 
   const dt = Math.min(clock.getDelta(), 1 / 20);
+  const currentFps = dt > 0 ? 1 / dt : 0;
+  fpsSmoothed += (currentFps - fpsSmoothed) * 0.12;
 
   if (editor.consumeToggleRequested()) {
     if (editor.isActive()) {
@@ -482,14 +563,18 @@ function animate() {
     input.restart = false;
   }
 
-  const state = game.update(input, dt);
+  const controlContext = cameraController.getWalkingControlContext();
+  const state = game.update(input, dt, controlContext);
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, dt);
   world.updateChoiceSigns(
     state.playerMode === "driving" ? state.vehiclePose : state.playerPose,
     state.playerMode === "driving" ? state.upcomingIntersection : null
   );
-  world.updateDecorations(dt);
+  world.updateDecorations(dt, {
+    camera,
+    playerPose: state.playerPose
+  });
 
   updatePlayerCarEffects(playerCar, dt, {
     nightMode: world.isNightMode(),
@@ -514,5 +599,8 @@ window.addEventListener("resize", () => {
 });
 
 initMinimap();
+setupCameraSettingsPanel();
 restartGame();
 animate();
+
+

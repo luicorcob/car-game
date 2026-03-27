@@ -12,6 +12,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
   const treePlacements = [];
   const lampPlacements = [];
+  const buildings = [];
   const movingPedestrians = [];
   const staticPedestrians = [];
   const parkedCars = [];
@@ -104,6 +105,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
           building.userData.editorRemovable = true;
           building.position.set(b.x, 0, b.z);
           scene.add(building);
+          buildings.push(building);
 
           hooks.beginEditorObject?.(building);
           const rotated = Math.abs(Math.sin(b.rot)) > 0.5;
@@ -359,7 +361,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         t: rnd(),
         dir: rnd() < 0.5 ? 1 : -1,
         speed: 0.032 + rnd() * 0.04,
-        phase: rnd() * Math.PI * 2
+        phase: rnd() * Math.PI * 2,
+        simAccumulator: 0
       });
     }
   }
@@ -426,11 +429,105 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     addStaticPedestrians();
   }
 
-  function updateDecorations(dt) {
+  function buildViewContext(context) {
+    const camera = context?.camera;
+    if (!camera) return null;
+
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+
+    const forwardXZ = new THREE.Vector2(forward.x, forward.z);
+    if (forwardXZ.lengthSq() < 0.0001) return null;
+
+    forwardXZ.normalize();
+
+    const halfFov =
+      THREE.MathUtils.degToRad(camera.fov * 0.5) +
+      (CONFIG.world.cullFovPaddingRad ?? 0.6);
+
+    return {
+      x: camera.position.x,
+      z: camera.position.z,
+      fx: forwardXZ.x,
+      fz: forwardXZ.y,
+      minDot: Math.cos(halfFov)
+    };
+  }
+
+  function isVisibleByView(position, maxDistance, view) {
+    const dx = position.x - view.x;
+    const dz = position.z - view.z;
+    const distSq = dx * dx + dz * dz;
+    const maxDistSq = maxDistance * maxDistance;
+
+    if (distSq > maxDistSq) return false;
+    if (distSq < 18 * 18) return true;
+
+    const invDist = 1 / Math.sqrt(distSq);
+    const dot = (dx * view.fx + dz * view.fz) * invDist;
+    return dot >= view.minDot;
+  }
+
+  function updateDecorations(dt, context = null) {
+    const playerPose = context?.playerPose ?? null;
+    const view = buildViewContext(context);
+
+    const maxBuildingDistance = CONFIG.world.cullDistanceBuildings ?? 520;
+    const maxParkedDistance = CONFIG.world.cullDistanceParkedCars ?? 320;
+    const maxPedDistance = CONFIG.world.cullDistancePedestrians ?? 240;
+
+    for (const building of buildings) {
+      if (!view) {
+        building.visible = true;
+        continue;
+      }
+      building.visible = isVisibleByView(building.position, maxBuildingDistance, view);
+    }
+
+    for (const car of parkedCars) {
+      if (!view) {
+        car.visible = true;
+        continue;
+      }
+      car.visible = isVisibleByView(car.position, maxParkedDistance, view);
+    }
+
+    const nearDist = CONFIG.world.pedestrianNearUpdateDistance ?? 90;
+    const midDist = CONFIG.world.pedestrianMidUpdateDistance ?? 170;
+    const farStep = CONFIG.world.pedestrianFarStepSeconds ?? 0.24;
+
     for (const ped of movingPedestrians) {
       if (!ped.alive) continue;
 
-      ped.t += ped.dir * ped.speed * dt;
+      let visible = true;
+      if (view) {
+        visible = isVisibleByView(ped.group.position, maxPedDistance, view);
+      }
+      ped.group.visible = visible;
+      if (!visible) continue;
+
+      let simDt = dt;
+      if (playerPose) {
+        const dxp = ped.group.position.x - playerPose.x;
+        const dzp = ped.group.position.z - playerPose.z;
+        const dist = Math.hypot(dxp, dzp);
+
+        if (dist > midDist) {
+          ped.simAccumulator += dt;
+          if (ped.simAccumulator < farStep) {
+            continue;
+          }
+          simDt = ped.simAccumulator;
+          ped.simAccumulator = 0;
+        } else if (dist > nearDist) {
+          simDt = dt * 0.66;
+          ped.simAccumulator = 0;
+        } else {
+          ped.simAccumulator = 0;
+        }
+      }
+
+      ped.t += ped.dir * ped.speed * simDt;
 
       if (ped.t > 1) {
         ped.t = 1;
@@ -454,6 +551,15 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       ped.legLeft.rotation.x = -walk * 0.5;
       ped.legRight.rotation.x = walk * 0.5;
       ped.group.position.y = Math.abs(walk) * 0.015;
+    }
+
+    for (const ped of staticPedestrians) {
+      if (!ped.alive) continue;
+      if (!view) {
+        ped.group.visible = true;
+        continue;
+      }
+      ped.group.visible = isVisibleByView(ped.group.position, maxPedDistance, view);
     }
   }
 

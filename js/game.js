@@ -581,7 +581,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return true;
   }
 
-  function updateDrivingInput(input, dt) {
+  function updateDrivingInput(input, dt, turnSensitivity = 1) {
     if (gameOver) return;
 
     const onGasSegment = world.isGasStationSegment(player.segment);
@@ -643,11 +643,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       let desiredLaneVelocity = 0;
 
       if (input.left && !input.right) {
-        desiredLaneVelocity = -CONFIG.player.laneChangeSpeed;
+        desiredLaneVelocity = -CONFIG.player.laneChangeSpeed * turnSensitivity;
       }
 
       if (input.right && !input.left) {
-        desiredLaneVelocity = CONFIG.player.laneChangeSpeed;
+        desiredLaneVelocity = CONFIG.player.laneChangeSpeed * turnSensitivity;
       }
 
       player.laneVelocity +=
@@ -1132,7 +1132,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return 0;
   }
 
-  function update(input, dt) {
+  function update(input, dt, controlContext = null) {
     let moveDistance = 0;
     let upcomingIntersection = null;
     let gasAccess = null;
@@ -1146,7 +1146,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           inShop: false
         });
 
-        updateDrivingInput(input, dt);
+        const turnSensitivity = clamp(
+          controlContext?.thirdPersonTurnSensitivity ?? 1,
+          0.5,
+          2.5
+        );
+        updateDrivingInput(input, dt, turnSensitivity);
 
         const enteredStation = tryEnterGasStation(input);
         if (!enteredStation) {
@@ -1169,7 +1174,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         const characterStateNow = character.update(
           input,
           dt,
-          [getPlayerVehicleBlocker()]
+          [getPlayerVehicleBlocker()],
+          controlContext
         );
 
         inWeaponShopCounter = world.isPlayerNearWeaponShopCounter(characterStateNow);

@@ -96,6 +96,11 @@ body {
   color: var(--money);
 }
 
+#fps {
+  color: #22c55e;
+  font-weight: 900;
+}
+
 #camera-mode {
   color: var(--camera);
 }
@@ -445,6 +450,74 @@ body {
   text-align: center;
 }
 
+.settings-toggle {
+  position: fixed;
+  right: 18px;
+  top: 220px;
+  z-index: 10;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(10, 14, 28, 0.84);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  padding: 8px 12px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.camera-settings {
+  position: fixed;
+  right: 18px;
+  top: 270px;
+  width: 300px;
+  z-index: 9;
+  pointer-events: auto;
+  padding: 12px 14px;
+}
+
+.camera-settings-kicker {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.72);
+  margin-bottom: 10px;
+}
+
+.camera-setting {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.camera-setting span {
+  grid-column: 1 / -1;
+}
+
+.camera-setting input,
+.camera-setting select {
+  width: 100%;
+  grid-column: 1 / 2;
+}
+
+.camera-setting strong {
+  font-size: 12px;
+  color: #dbeafe;
+}
+
+.camera-settings-help {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.62);
+}
+
 .editor-panel {
   position: fixed;
   top: 16px;
@@ -713,6 +786,8 @@ body.editor-active #mission-card,
 body.editor-active #fuel-card,
 body.editor-active #weapon-card,
 body.editor-active #nav-map-card,
+body.editor-active #camera-settings,
+body.editor-active #settings-toggle,
 body.editor-active #prompt,
 body.editor-active #game-over {
   opacity: 0.18;
@@ -727,6 +802,19 @@ body.editor-active #game {
 }
 
 @media (max-width: 900px) {
+  .settings-toggle {
+    top: 12px;
+    right: 12px;
+  }
+
+  .camera-settings {
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+  }
+
   .editor-panel {
     left: 12px;
     right: 12px;

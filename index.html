@@ -34,6 +34,7 @@
       <div>Puntuación: <span id="score">0</span></div>
       <div>Dinero: <span id="money">$0</span></div>
       <div>Vista: <span id="camera-mode">3ª persona</span></div>
+      <div>FPS: <span id="fps">0</span></div>
       <div>Estado: <span id="status">Jugando</span></div>
     </div>
   </div>
@@ -95,6 +96,26 @@
     <h2>Fin</h2>
     <p>Pulsa <strong>R</strong> para reiniciar</p>
   </div>
+
+  <button id="settings-toggle" class="settings-toggle" type="button">Ajustes</button>
+
+  <section id="camera-settings" class="panel camera-settings hidden">
+    <div class="camera-settings-kicker">AJUSTES DE CÁMARA</div>
+
+    <label class="camera-setting">
+      <span>Sensibilidad 1ª persona</span>
+      <input id="fp-sens" type="range" min="0.0004" max="0.01" step="0.0001" />
+      <strong id="fp-sens-value">0.0022</strong>
+    </label>
+
+    <label class="camera-setting">
+      <span>Giro 3ª persona (WASD)</span>
+      <input id="tp-sens" type="range" min="0.25" max="2.5" step="0.05" />
+      <strong id="tp-sens-value">1.00x</strong>
+    </label>
+
+    <p class="camera-settings-help">Este ajuste controla la rapidez con la que gira el personaje en tercera persona.</p>
+  </section>
 
   <aside id="editor-panel" class="editor-panel hidden">
     <div class="editor-shell">

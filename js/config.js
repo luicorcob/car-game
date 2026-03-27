@@ -63,8 +63,23 @@ export const CONFIG = {
 
     firstPersonPositionDamping: 14,
     firstPersonLookDamping: 10,
+    firstPersonPositionDampingDriving: 18,
+    firstPersonPositionDampingWalking: 14,
+    firstPersonLookDampingDriving: 16,
+    firstPersonLookDampingWalking: 11,
     drivingFirstPersonLookDistance: 28,
     walkingFirstPersonLookDistance: 12,
+    firstPersonRecenteringSpeed: 2.4,
+    firstPersonRecenteringDelay: 0.32,
+    firstPersonMouseDeadzone: 0.00002,
+    firstPersonToggleCooldown: 0.12,
+    mouseSensitivityFirstPerson: 0.0022,
+    thirdPersonTurnSensitivity: 1,
+    walkPitchMin: -1.2217304764,
+    walkPitchMax: 1.0471975512,
+    drivePitchMin: -0.6108652382,
+    drivePitchMax: 0.6108652382,
+    driveYawLimit: 1.0471975512,
 
     positionDamping: 8,
     lookDamping: 10
@@ -87,7 +102,14 @@ export const CONFIG = {
   world: {
     grassSize: 2400,
     fogNear: 140,
-    fogFar: 1200
+    fogFar: 1200,
+    cullFovPaddingRad: 0.6,
+    cullDistanceBuildings: 520,
+    cullDistanceParkedCars: 320,
+    cullDistancePedestrians: 240,
+    pedestrianNearUpdateDistance: 90,
+    pedestrianMidUpdateDistance: 170,
+    pedestrianFarStepSeconds: 0.24
   },
 
   decor: {
