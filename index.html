@@ -175,6 +175,27 @@
       </div>
 
       <div class="editor-section">
+  <div class="editor-section-title">JSON / Proyecto</div>
+
+  <textarea
+    id="editor-json-text"
+    class="editor-json-text"
+    spellcheck="false"
+    placeholder="Aquí aparecerá el JSON exportado o puedes pegar aquí un layout para importarlo."
+  ></textarea>
+
+  <div class="editor-actions">
+    <button id="editor-export-json" type="button">Exportar JSON</button>
+    <button id="editor-export-module" type="button">Exportar módulo</button>
+    <button id="editor-import-json" type="button">Importar texto</button>
+    <button id="editor-load-project" type="button">Cargar proyecto</button>
+  </div>
+
+  <p id="editor-json-status" class="editor-note">
+    Exporta a texto para copiarlo. “Exportar módulo” te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
+  </p>
+</div>
+      <div class="editor-section">
         <div class="editor-section-title">Ayuda rápida</div>
         <div class="editor-help">
           <div><strong>M</strong> abrir/cerrar creador</div>

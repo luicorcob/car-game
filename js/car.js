@@ -1,5 +1,44 @@
 import * as THREE from "three";
 import { CONFIG } from "./config.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
+
+
+const USE_TRAFFIC_CAR_GLB = true;
+const TRAFFIC_CAR_VISUAL_SCALE_MULTIPLIER = 1.55;
+
+const trafficCarLoader = new GLTFLoader();
+const trafficCarCache = new Map();
+
+const TRAFFIC_CAR_MODEL_BASE_PATH = "../assets/models/vehicles/cars/";
+const trafficCarPath = (fileName) =>
+  `${TRAFFIC_CAR_MODEL_BASE_PATH}${encodeURIComponent(fileName)}`;
+
+const TRAFFIC_CAR_MODELS = [
+  { file: "Car 1.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 2.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 3.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 4.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 5.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 6.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 7.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 8.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 9.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 10.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 11.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 12.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 13.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 14.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 },
+  { file: "Car 15.glb", width: 2.2, depth: 4.6, height: 1.9, rotY: 0, yOffset: 0 }
+];
+
+
+
+
+
+
+
+
 
 function createSmokeTexture() {
   const canvas = document.createElement("canvas");
@@ -71,6 +110,130 @@ function registerWreckable(rig, mesh, weight = 1) {
   });
 }
 
+function loadTrafficCarTemplate(fileName) {
+  if (!trafficCarCache.has(fileName)) {
+    trafficCarCache.set(
+      fileName,
+      new Promise((resolve, reject) => {
+        trafficCarLoader.load(
+          trafficCarPath(fileName),
+          (gltf) => {
+            const root = gltf.scene || gltf.scenes?.[0];
+            if (!root) {
+              reject(new Error(`El GLB no tiene escena raíz: ${fileName}`));
+              return;
+            }
+            resolve(root);
+          },
+          undefined,
+          reject
+        );
+      })
+    );
+  }
+
+  return trafficCarCache.get(fileName);
+}
+
+function fitImportedVehicleModel(container, model, {
+  width = 2.2,
+  depth = 4.6,
+  height = 1.9,
+  rotY = 0,
+  yOffset = 0
+} = {}) {
+  const targetWidth = width * TRAFFIC_CAR_VISUAL_SCALE_MULTIPLIER;
+  const targetDepth = depth * TRAFFIC_CAR_VISUAL_SCALE_MULTIPLIER;
+  const targetHeight = height * TRAFFIC_CAR_VISUAL_SCALE_MULTIPLIER;
+
+  model.rotation.y = rotY;
+  container.add(model);
+  container.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(container);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  const scale = Math.min(
+    targetWidth / Math.max(size.x, 0.0001),
+    targetDepth / Math.max(size.z, 0.0001),
+    targetHeight / Math.max(size.y, 0.0001)
+  );
+
+  model.scale.setScalar(scale);
+  container.updateMatrixWorld(true);
+
+  const fittedBox = new THREE.Box3().setFromObject(container);
+  const fittedCenter = new THREE.Vector3();
+  fittedBox.getCenter(fittedCenter);
+
+  model.position.set(
+    -fittedCenter.x,
+    yOffset - fittedBox.min.y,
+    -fittedCenter.z
+  );
+
+  container.updateMatrixWorld(true);
+}
+function registerImportedVehicleAsWreckable(vehicleRig, root, weight = 1) {
+  vehicleRig.importedVehicle = true;
+
+  root.traverse((child) => {
+    if (!child.isMesh) return;
+
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map((mat) =>
+        mat?.clone ? mat.clone() : mat
+      );
+    } else if (child.material?.clone) {
+      child.material = child.material.clone();
+    }
+
+    child.castShadow = false;
+    child.receiveShadow = true;
+  });
+
+  registerWreckable(vehicleRig, root, weight);
+}
+function pickRandomTrafficCarModel() {
+  return TRAFFIC_CAR_MODELS[
+    Math.floor(Math.random() * TRAFFIC_CAR_MODELS.length)
+  ];
+}
+
+function createImportedTrafficCar(color = 0x3366ff) {
+  const group = createSimpleTrafficBody(color);
+
+  if (!USE_TRAFFIC_CAR_GLB || !TRAFFIC_CAR_MODELS.length) {
+    return group;
+  }
+
+  const selectedModel = pickRandomTrafficCarModel();
+
+  loadTrafficCarTemplate(selectedModel.file)
+    .then((template) => {
+      const cloned = SkeletonUtils.clone(template);
+      const visualRoot = new THREE.Group();
+      const vehicleRig = {
+        wreckables: [],
+        isWrecked: false
+      };
+
+      fitImportedVehicleModel(visualRoot, cloned, selectedModel);
+      registerImportedVehicleAsWreckable(vehicleRig, visualRoot, 0.28);
+
+      group.clear();
+      group.userData.vehicleRig = vehicleRig;
+      group.add(visualRoot);
+    })
+    .catch((error) => {
+      console.error(`No se pudo cargar ${selectedModel.file}`, error);
+    });
+
+  return group;
+}
+
+
 function resetVehicleWreckState(vehicle) {
   const rig = vehicle.userData.vehicleRig;
   if (!rig) return;
@@ -96,6 +259,24 @@ export function setVehicleWreckState(vehicle, {
 
   const xSign = impactX >= 0 ? 1 : -1;
   const zSign = impactZ >= 0 ? 1 : -1;
+
+  if (rig.importedVehicle) {
+    const item = rig.wreckables[0];
+    if (!item) return;
+
+    const f = Math.min(1.4, Math.max(0.65, intensity * item.weight));
+
+    item.mesh.position.x = item.basePosition.x + xSign * 0.08 * f;
+    item.mesh.position.y = item.basePosition.y + 0.03 * f;
+    item.mesh.position.z = item.basePosition.z - zSign * 0.12 * f;
+
+    item.mesh.rotation.x = item.baseRotation.x + zSign * 0.05 * f;
+    item.mesh.rotation.y = item.baseRotation.y + xSign * 0.02 * f;
+    item.mesh.rotation.z = item.baseRotation.z + xSign * 0.09 * f;
+
+    item.mesh.scale.copy(item.baseScale);
+    return;
+  }
 
   for (const item of rig.wreckables) {
     const f = intensity * item.weight;
@@ -982,7 +1163,7 @@ export function updatePlayerCarEffects(car, dt, state) {
 }
 
 export function createTrafficCar(color = 0x3366ff) {
-  return createSimpleTrafficBody(color);
+  return createImportedTrafficCar(color);
 }
 
 export function createTrafficTruck(

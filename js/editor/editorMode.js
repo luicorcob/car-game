@@ -1,48 +1,24 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { EDITOR_ITEMS, getEditorItem } from "./editorCatalog.js";
+import { PROJECT_LAYOUT } from "./projectLayout.js";
 
 const STORAGE_KEY_CURRENT = "road-driver-3d-editor-layout-current";
 const STORAGE_KEY_LIBRARY = "road-driver-3d-editor-layout-library";
 const GRID_SIZE = 14;
 const ROTATION_STEP = Math.PI / 2;
 
-const EDITOR_ITEMS = [
-  {
-    id: "building",
-    label: "Edificio",
-    hint: "Bloque urbano",
-    color: "#60a5fa"
-  },
-  {
-    id: "tree",
-    label: "Árbol",
-    hint: "Vegetación",
-    color: "#22c55e"
-  },
-  {
-    id: "road",
-    label: "Carretera",
-    hint: "Tramo recto",
-    color: "#f59e0b"
-  },
-  {
-    id: "crossroad",
-    label: "Cruce",
-    hint: "Intersección",
-    color: "#fb7185"
-  },
-  {
-    id: "house",
-    label: "Casa",
-    hint: "Vivienda baja",
-    color: "#a78bfa"
-  },
-  {
-    id: "lamp",
-    label: "Farola",
-    hint: "Luz urbana",
-    color: "#f8fafc"
-  }
-];
+const gltfLoader = new GLTFLoader();
+const gltfCache = new Map();
+
+const CATEGORY_ORDER = ["road", "building", "decor", "vehicle", "misc"];
+const CATEGORY_LABELS = {
+  road: "Carreteras",
+  building: "Edificios",
+  decor: "Decoración",
+  vehicle: "Vehículos",
+  misc: "Otros"
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -50,6 +26,79 @@ function clamp(value, min, max) {
 
 function snapToGrid(value) {
   return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
+
+function loadGltfTemplate(url) {
+  if (!gltfCache.has(url)) {
+    gltfCache.set(
+      url,
+      new Promise((resolve, reject) => {
+        gltfLoader.load(
+          url,
+          (gltf) => {
+            const root = gltf.scene || gltf.scenes?.[0];
+            if (!root) {
+              reject(new Error(`El modelo no tiene escena raíz: ${url}`));
+              return;
+            }
+            resolve(root);
+          },
+          undefined,
+          reject
+        );
+      })
+    );
+  }
+
+  return gltfCache.get(url);
+}
+
+function fitModelToBox(model, targetWidth, targetDepth, targetHeight, yOffset = 0) {
+  model.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(model);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+
+  const scale = Math.min(
+    targetWidth / Math.max(size.x, 0.0001),
+    targetDepth / Math.max(size.z, 0.0001),
+    targetHeight / Math.max(size.y, 0.0001)
+  );
+
+  model.scale.setScalar(scale);
+  model.updateMatrixWorld(true);
+
+  const fittedBox = new THREE.Box3().setFromObject(model);
+  const fittedCenter = new THREE.Vector3();
+  fittedBox.getCenter(fittedCenter);
+
+  model.position.set(
+    -fittedCenter.x,
+    yOffset - fittedBox.min.y,
+    -fittedCenter.z
+  );
+}
+
+function prepareImportedModel(model) {
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = false;
+    child.receiveShadow = true;
+  });
+}
+
+function resolveItemFit(item) {
+  const fit = item?.fit ?? {};
+  const units = fit.units ?? "grid";
+  const factor = units === "grid" ? GRID_SIZE : 1;
+
+  return {
+    width: (fit.width ?? 1) * factor,
+    depth: (fit.depth ?? 1) * factor,
+    height: (fit.height ?? 1) * factor,
+    yOffset: fit.yOffset ?? 0
+  };
 }
 
 function createSharedMaterials() {
@@ -277,7 +326,7 @@ function createLampPiece(materials) {
   return group;
 }
 
-function createPieceMesh(type, materials) {
+function createPrimitivePiece(type, materials) {
   if (type === "road") return createRoadPiece(materials);
   if (type === "crossroad") return createCrossroadPiece(materials);
   if (type === "building") return createBuildingPiece(materials);
@@ -285,6 +334,36 @@ function createPieceMesh(type, materials) {
   if (type === "house") return createHousePiece(materials);
   if (type === "lamp") return createLampPiece(materials);
   return new THREE.Group();
+}
+
+function createMissingModelPlaceholder(item) {
+  const group = new THREE.Group();
+  const color = item?.color ?? "#94a3b8";
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(GRID_SIZE * 0.86, 0.4, GRID_SIZE * 0.86),
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.82,
+      metalness: 0.05
+    })
+  );
+  base.position.y = 0.2;
+  group.add(base);
+
+  const tower = new THREE.Mesh(
+    new THREE.BoxGeometry(GRID_SIZE * 0.68, GRID_SIZE * 1.55, GRID_SIZE * 0.68),
+    new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.25,
+      metalness: 0.05,
+      wireframe: true
+    })
+  );
+  tower.position.y = GRID_SIZE * 0.78;
+  group.add(tower);
+
+  return group;
 }
 
 function makeGhost(material) {
@@ -301,20 +380,156 @@ function applyGhostStyle(object) {
   });
 }
 
+function createGlbPiece(item, options = {}) {
+  const { ghost = false } = options;
+  const wrapper = new THREE.Group();
+
+  if (!item?.modelUrl) {
+    const placeholder = createMissingModelPlaceholder(item);
+    if (ghost) applyGhostStyle(placeholder);
+    wrapper.add(placeholder);
+    return wrapper;
+  }
+
+  loadGltfTemplate(item.modelUrl)
+    .then((template) => {
+      const model = template.clone(true);
+      const fit = resolveItemFit(item);
+
+      fitModelToBox(
+        model,
+        fit.width,
+        fit.depth,
+        fit.height,
+        fit.yOffset
+      );
+
+      prepareImportedModel(model);
+
+      if (ghost) {
+        applyGhostStyle(model);
+      }
+
+      wrapper.add(model);
+    })
+    .catch((error) => {
+      console.error(`No se pudo cargar el modelo ${item.modelUrl}`, error);
+      const placeholder = createMissingModelPlaceholder(item);
+      if (ghost) applyGhostStyle(placeholder);
+      wrapper.add(placeholder);
+    });
+
+  return wrapper;
+}
+
+function createPieceMesh(type, materials, options = {}) {
+  const item = getEditorItem(type);
+  if (!item) return new THREE.Group();
+
+  if (item.kind === "glb") {
+    return createGlbPiece(item, options);
+  }
+
+  const mesh = createPrimitivePiece(item.primitiveType ?? item.id, materials);
+
+  if (options.ghost) {
+    applyGhostStyle(mesh);
+  }
+
+  return mesh;
+}
+
+function groupItemsByCategory(items) {
+  const buckets = new Map();
+
+  for (const category of CATEGORY_ORDER) {
+    buckets.set(category, []);
+  }
+
+  for (const item of items) {
+    const category = item.category ?? "misc";
+    if (!buckets.has(category)) {
+      buckets.set(category, []);
+    }
+    buckets.get(category).push(item);
+  }
+
+  return [...buckets.entries()].filter(([, entries]) => entries.length > 0);
+}
+
 function createPaletteButtons(paletteEl, onSelect) {
   const buttons = new Map();
+  paletteEl.innerHTML = "";
 
-  for (const item of EDITOR_ITEMS) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.innerHTML = `<strong>${item.label}</strong><span>${item.hint}</span>`;
-    button.style.boxShadow = `inset 0 0 0 1px ${item.color}22`;
-    button.addEventListener("click", () => onSelect(item.id));
-    paletteEl.appendChild(button);
-    buttons.set(item.id, button);
+  for (const [category, items] of groupItemsByCategory(EDITOR_ITEMS)) {
+    const groupEl = document.createElement("div");
+    groupEl.className = "editor-palette-group";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "editor-palette-group-title";
+    titleEl.textContent = CATEGORY_LABELS[category] ?? category;
+    groupEl.appendChild(titleEl);
+
+    const gridEl = document.createElement("div");
+    gridEl.className = "editor-palette-grid";
+
+    for (const item of items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.innerHTML = `<strong>${item.label}</strong><span>${item.hint}</span>`;
+      button.style.boxShadow = `inset 0 0 0 1px ${item.color}22`;
+      button.addEventListener("click", () => onSelect(item.id));
+      gridEl.appendChild(button);
+      buttons.set(item.id, button);
+    }
+
+    groupEl.appendChild(gridEl);
+    paletteEl.appendChild(groupEl);
   }
 
   return buttons;
+}
+
+function normalizeLayoutData(data) {
+  if (!data || !Array.isArray(data.items)) return null;
+
+  return {
+    version: Number(data.version) || 1,
+    gridSize: Number(data.gridSize) || GRID_SIZE,
+    items: data.items
+  };
+}
+
+function buildProjectModuleText(layout) {
+  return `export const PROJECT_LAYOUT = ${JSON.stringify(layout, null, 2)};\n`;
+}
+
+function parseLayoutText(rawText) {
+  const text = rawText.trim();
+  if (!text) {
+    throw new Error("No hay texto para importar.");
+  }
+
+  if (text.startsWith("{")) {
+    return JSON.parse(text);
+  }
+
+  if (
+    text.startsWith("export const PROJECT_LAYOUT") ||
+    text.startsWith("const PROJECT_LAYOUT") ||
+    text.startsWith("export default")
+  ) {
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+      throw new Error("No se encontró un objeto válido en el texto.");
+    }
+
+    return JSON.parse(text.slice(firstBrace, lastBrace + 1));
+  }
+
+  return JSON.parse(text);
 }
 
 export function createEditorMode(scene, camera, renderer, dom, options = {}) {
@@ -363,10 +578,18 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   syncPalette();
   updateStatus();
 
+  function setJsonStatus(text, mode = "") {
+    if (!dom.jsonStatusEl) return;
+    dom.jsonStatusEl.textContent = text;
+    dom.jsonStatusEl.classList.remove("error", "success");
+    if (mode) {
+      dom.jsonStatusEl.classList.add(mode);
+    }
+  }
+
   function rebuildPreview() {
     previewGroup.clear();
-    const mesh = createPieceMesh(selectedType, materials);
-    applyGhostStyle(mesh);
+    const mesh = createPieceMesh(selectedType, materials, { ghost: true });
     mesh.rotation.y = rotation;
     previewGroup.add(mesh);
   }
@@ -378,7 +601,7 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   }
 
   function updateStatus() {
-    const item = EDITOR_ITEMS.find((entry) => entry.id === selectedType);
+    const item = getEditorItem(selectedType);
     dom.selectedLabelEl.textContent = item?.label ?? "Ninguno";
     dom.cursorLabelEl.textContent = `${previewPosition.x.toFixed(0)}, ${previewPosition.z.toFixed(0)}`;
     dom.rotationLabelEl.textContent = `${Math.round((rotation * 180) / Math.PI)}°`;
@@ -505,6 +728,7 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
     if (!selected) return;
     loadLayout(selected, false);
     syncLayoutInput(selected);
+    setJsonStatus("Escena cargada desde la biblioteca web.", "success");
   }
 
   function deleteSelectedLayout() {
@@ -517,7 +741,7 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   }
 
   function addPlacement(definition) {
-    const mesh = createPieceMesh(definition.type, materials);
+    const mesh = createPieceMesh(definition.type, materials, { ghost: false });
     mesh.position.set(definition.x, 0, definition.z);
     mesh.rotation.y = definition.rotation;
     mesh.userData.editorPlacementId = definition.id;
@@ -624,17 +848,19 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
     placements.length = 0;
     saveCurrentLayout();
     updateStatus();
+    setJsonStatus("Escena vaciada en el navegador.", "success");
   }
 
   function loadLayout(data, preserveSelection = true) {
-    if (!data || !Array.isArray(data.items)) return;
+    const normalized = normalizeLayoutData(data);
+    if (!normalized) return false;
 
     placementGroup.clear();
     placedMeshes.clear();
     placements.length = 0;
 
-    for (const item of data.items) {
-      if (!EDITOR_ITEMS.some((entry) => entry.id === item.type)) continue;
+    for (const item of normalized.items) {
+      if (!getEditorItem(item.type)) continue;
       addPlacement({
         id: item.id ?? `editor_${objectCounter++}`,
         type: item.type,
@@ -651,16 +877,65 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
     saveCurrentLayout();
     updateStatus();
     renderLibrary();
+    return true;
   }
 
   function tryLoadSavedLayout() {
     const raw = localStorage.getItem(STORAGE_KEY_CURRENT);
-    if (!raw) return;
+    if (!raw) return false;
 
     try {
-      loadLayout(JSON.parse(raw));
+      return loadLayout(JSON.parse(raw));
     } catch (error) {
       console.warn("No se pudo cargar el layout guardado del editor.", error);
+      return false;
+    }
+  }
+
+  function loadProjectLayout({ silent = false } = {}) {
+    const normalized = normalizeLayoutData(PROJECT_LAYOUT);
+    if (!normalized) {
+      if (!silent) {
+        setJsonStatus("No hay layout de proyecto válido en js/editor/projectLayout.js.", "error");
+      }
+      return false;
+    }
+
+    const ok = loadLayout(normalized);
+    if (ok && !silent) {
+      setJsonStatus("Layout del proyecto cargado desde código.", "success");
+    }
+    return ok;
+  }
+
+  function exportJsonToTextarea() {
+    if (!dom.jsonTextEl) return;
+    dom.jsonTextEl.value = JSON.stringify(toSerializable(), null, 2);
+    setJsonStatus("JSON exportado al cuadro de texto.", "success");
+  }
+
+  function exportProjectModuleToTextarea() {
+    if (!dom.jsonTextEl) return;
+    dom.jsonTextEl.value = buildProjectModuleText(toSerializable());
+    setJsonStatus("Módulo listo para pegar en js/editor/projectLayout.js.", "success");
+  }
+
+  function importJsonFromTextarea() {
+    if (!dom.jsonTextEl) return;
+
+    try {
+      const parsed = parseLayoutText(dom.jsonTextEl.value);
+      const ok = loadLayout(parsed);
+
+      if (!ok) {
+        setJsonStatus("El texto no contiene un layout válido.", "error");
+        return;
+      }
+
+      setJsonStatus("Layout importado y guardado en el navegador.", "success");
+    } catch (error) {
+      console.error(error);
+      setJsonStatus(`Error importando texto: ${error.message}`, "error");
     }
   }
 
@@ -698,14 +973,6 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
     root.visible = false;
     dom.panelEl.classList.add("hidden");
     document.body.classList.remove("editor-active");
-  }
-
-  function toggle() {
-    if (active) {
-      exit();
-    } else {
-      enter();
-    }
   }
 
   function updateCamera(dt) {
@@ -816,10 +1083,27 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   dom.loadSlotBtn.addEventListener("click", loadSelectedLayout);
   dom.deleteSlotBtn.addEventListener("click", deleteSelectedLayout);
 
-  tryLoadSavedLayout();
+  dom.exportJsonBtn?.addEventListener("click", exportJsonToTextarea);
+  dom.exportModuleBtn?.addEventListener("click", exportProjectModuleToTextarea);
+  dom.importJsonBtn?.addEventListener("click", importJsonFromTextarea);
+  dom.loadProjectBtn?.addEventListener("click", () => loadProjectLayout());
+
+  const loadedFromBrowser = tryLoadSavedLayout();
+  if (!loadedFromBrowser) {
+    loadProjectLayout({ silent: true });
+  }
+
   selectedLayoutId = loadLibrary()[0]?.id ?? null;
   syncLayoutInput(loadLibrary()[0] ?? null);
   renderLibrary();
+
+  if (loadedFromBrowser) {
+    setJsonStatus("Se cargó la escena guardada del navegador.", "success");
+  } else if (normalizeLayoutData(PROJECT_LAYOUT)?.items?.length) {
+    setJsonStatus("Se cargó la escena fija del proyecto.", "success");
+  } else {
+    setJsonStatus("Puedes seguir guardando escenas en web y además exportarlas al proyecto.", "");
+  }
 
   return {
     update,

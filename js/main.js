@@ -118,6 +118,13 @@ const CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
 
+
+const editorJsonTextEl = document.querySelector("#editor-json-text");
+const editorExportJsonBtn = document.querySelector("#editor-export-json");
+const editorExportModuleBtn = document.querySelector("#editor-export-module");
+const editorImportJsonBtn = document.querySelector("#editor-import-json");
+const editorLoadProjectBtn = document.querySelector("#editor-load-project");
+const editorJsonStatusEl = document.querySelector("#editor-json-status");
 const editor = createEditorMode(
   scene,
   camera,
@@ -137,6 +144,12 @@ const editor = createEditorMode(
     deleteSlotBtn: editorDeleteSlotBtn,
     layoutListEl: editorLayoutListEl,
     closeBtn: editorCloseBtn,
+    jsonTextEl: editorJsonTextEl,
+    exportJsonBtn: editorExportJsonBtn,
+    exportModuleBtn: editorExportModuleBtn,
+    importJsonBtn: editorImportJsonBtn,
+    loadProjectBtn: editorLoadProjectBtn,
+    jsonStatusEl: editorJsonStatusEl,
   },
   {
     removeWorldObject: world.removeEditorObject
