@@ -1734,6 +1734,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       : 0;
     const crouchBlend = clamp(characterState?.crouchBlend ?? 0, 0, 1);
     const planarSpeed = Math.max(0, characterState?.planarSpeed ?? 0);
+    const airborne = characterState?.onGround === false;
     const moveFactor = Math.min(1.4, planarSpeed / CONFIG.onFoot.runSpeed);
     const edgePenalty = !aimControl?.firstPerson
       ? clamp(aimControl?.cursorEdgePressure ?? 0, 0, 1)
@@ -1744,6 +1745,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const hipFireMultiplier = weapon?.hipFireMultiplier ?? 1;
     const aimedSpreadMultiplier = weapon?.aimedSpreadMultiplier ?? 1;
     const movementMultiplier = 1 + moveFactor * 1.05;
+    const airborneMultiplier = airborne ? 2.7 : 1;
     const crouchMultiplier = THREE.MathUtils.lerp(1, 0.64, crouchBlend);
     const aimMultiplier = THREE.MathUtils.lerp(1, 0.3, aimBlend);
     const weaponAimTuningMultiplier = THREE.MathUtils.lerp(
@@ -1763,6 +1765,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       ? 0
       : baseRadius *
         movementMultiplier *
+        airborneMultiplier *
         crouchMultiplier *
         aimMultiplier *
         weaponAimTuningMultiplier *
