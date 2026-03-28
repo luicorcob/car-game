@@ -77,6 +77,8 @@ const sniperScopeZoomEl = document.querySelector("#sniper-scope-zoom");
 const promptEl = document.querySelector("#prompt");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
 const settingsToggleEl = document.querySelector("#settings-toggle");
+const weaponVolumeEl = document.querySelector("#weapon-volume");
+const weaponVolumeValueEl = document.querySelector("#weapon-volume-value");
 const fpSensEl = document.querySelector("#fp-sens");
 const fpSensValueEl = document.querySelector("#fp-sens-value");
 const tpSensEl = document.querySelector("#tp-sens");
@@ -274,7 +276,8 @@ const gasStationInfos = world.getGasStationInfos ? world.getGasStationInfos() : 
 
 const lookTarget = new THREE.Vector3();
 const cameraController = createCameraController(camera, lookTarget);
-const CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
+const SETTINGS_KEY = "road-driver-settings-v2";
+const LEGACY_CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
@@ -320,44 +323,69 @@ const editor = createEditorMode(
   }
 );
 
-function readSavedCameraSettings() {
+function readSavedSettings() {
   try {
-    const raw = localStorage.getItem(CAMERA_SETTINGS_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return JSON.parse(raw);
+
+    const legacyRaw = localStorage.getItem(LEGACY_CAMERA_SETTINGS_KEY);
+    if (!legacyRaw) return null;
+    return JSON.parse(legacyRaw);
   } catch {
     return null;
   }
 }
 
-function saveCameraSettings(settings) {
+function saveSettings(settings) {
   try {
-    localStorage.setItem(CAMERA_SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
     // Ignorado en modo privado o con storage bloqueado.
   }
 }
 
-function updateCameraSettingsUI(settings) {
+function getCombinedSettings() {
+  const cameraSettings = cameraController.getSettings();
+  return {
+    firstPersonSensitivity: cameraSettings.firstPersonSensitivity,
+    thirdPersonTurnSensitivity: cameraSettings.thirdPersonTurnSensitivity,
+    weaponVolume: game.getWeaponSoundVolume()
+  };
+}
+
+function updateSettingsUI(settings) {
+  weaponVolumeEl.value = String(Math.round((settings.weaponVolume ?? 0.5) * 100));
   fpSensEl.value = String(settings.firstPersonSensitivity);
   tpSensEl.value = String(settings.thirdPersonTurnSensitivity);
 
+  weaponVolumeValueEl.textContent = `${Math.round((settings.weaponVolume ?? 0.5) * 100)}%`;
   fpSensValueEl.textContent = Number(settings.firstPersonSensitivity).toFixed(4);
   tpSensValueEl.textContent = `${Number(settings.thirdPersonTurnSensitivity).toFixed(2)}x`;
 }
 
 function applyCameraSettings(nextSettings, persist = true) {
   cameraController.setSettings(nextSettings);
-  const applied = cameraController.getSettings();
-  updateCameraSettingsUI(applied);
+  const applied = getCombinedSettings();
+  updateSettingsUI(applied);
   if (persist) {
-    saveCameraSettings(applied);
+    saveSettings(applied);
+  }
+}
+
+function applyWeaponVolume(volume, persist = true) {
+  game.setWeaponSoundVolume(volume);
+  const applied = getCombinedSettings();
+  updateSettingsUI(applied);
+  if (persist) {
+    saveSettings(applied);
   }
 }
 
 function setupCameraSettingsPanel() {
-  const saved = readSavedCameraSettings();
+  const saved = readSavedSettings();
   const defaults = cameraController.getSettings();
+
+  applyWeaponVolume(saved?.weaponVolume ?? 0.5, false);
 
   applyCameraSettings(
     {
@@ -371,6 +399,10 @@ function setupCameraSettingsPanel() {
     applyCameraSettings({
       firstPersonSensitivity: Number(fpSensEl.value)
     });
+  });
+
+  weaponVolumeEl.addEventListener("input", () => {
+    applyWeaponVolume(Number(weaponVolumeEl.value) / 100);
   });
 
   tpSensEl.addEventListener("input", () => {

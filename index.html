@@ -155,7 +155,13 @@
   <button id="settings-toggle" class="settings-toggle" type="button">Ajustes</button>
 
   <section id="camera-settings" class="panel camera-settings hidden">
-    <div class="camera-settings-kicker">AJUSTES DE CÁMARA</div>
+    <div class="camera-settings-kicker">AJUSTES</div>
+
+    <label class="camera-setting">
+      <span>Volumen de armas</span>
+      <input id="weapon-volume" type="range" min="0" max="100" step="1" />
+      <strong id="weapon-volume-value">50%</strong>
+    </label>
 
     <label class="camera-setting">
       <span>Sensibilidad 1ª persona</span>
@@ -169,7 +175,7 @@
       <strong id="tp-sens-value">1.00x</strong>
     </label>
 
-    <p class="camera-settings-help">Este ajuste controla la rapidez con la que gira el personaje en tercera persona.</p>
+    <p class="camera-settings-help">Aquí puedes ajustar el volumen de las armas y la sensibilidad de la cámara. Al 100% el disparo suena fuerte.</p>
   </section>
 
   <aside id="editor-panel" class="editor-panel hidden">
