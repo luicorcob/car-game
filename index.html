@@ -25,8 +25,10 @@
       <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar, C para agacharse.</p>
       <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
       <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
-      <p><strong>Inventario:</strong> 1/2/3/4/5 cambia slot, I abre la mochila y Q/F cambia producto en tienda.</p>
-      <p><strong>Test vida:</strong> ¡ baja vida temporalmente para probar daÃ±o, regeneraciÃ³n y efecto rojo.</p>
+      <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
+      <p><strong>Inventario:</strong> 1/2/3/4/5 cambia slot, I abre la mochila.</p>
+      <p><strong>Móvil:</strong> P saca/guarda el teléfono.</p>
+      <p><strong>Test vida:</strong> ¡ baja vida temporalmente para probar daño, regeneración y efecto rojo.</p>
       <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
@@ -147,6 +149,116 @@
     </div>
   </div>
 
+  <aside id="phone-shell" class="phone-shell hidden" aria-hidden="true">
+    <div class="phone-device">
+      <div class="phone-edge phone-edge-left" aria-hidden="true"></div>
+      <div class="phone-edge phone-edge-right" aria-hidden="true"></div>
+
+      <div class="phone-face">
+        <div class="phone-hardware" aria-hidden="true">
+          <span class="phone-camera-dot"></span>
+          <span class="phone-speaker-slot"></span>
+          <span class="phone-brand">Fruit</span>
+        </div>
+
+        <div class="phone-screen">
+          <div class="phone-statusbar">
+            <div class="phone-signal">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span class="phone-status-day">Sat</span>
+            <span class="phone-status-time">09:00</span>
+            <span class="phone-battery"></span>
+          </div>
+
+          <div class="phone-titlebar">
+            <span id="phone-title-label">Contacts</span>
+          </div>
+
+          <div id="phone-home-view" class="phone-home-view">
+            <div class="phone-wallpaper"></div>
+
+            <div class="phone-app-grid">
+              <button class="phone-app" type="button" data-app="correo">
+                <span class="phone-badge">15</span>
+                <span class="phone-app-icon app-mail"></span>
+                <strong>Correo</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="mensajes">
+                <span class="phone-badge">3</span>
+                <span class="phone-app-icon app-messages"></span>
+                <strong>Mensajes</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="mapa">
+                <span class="phone-app-icon app-map"></span>
+                <strong>Mapa</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="taxi">
+                <span class="phone-app-icon app-taxi"></span>
+                <strong>Taxi</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="autos">
+                <span class="phone-app-icon app-dealer"></span>
+                <strong>Autos</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="camara">
+                <span class="phone-app-icon app-camera"></span>
+                <strong>Cámara</strong>
+              </button>
+            </div>
+
+            <div id="phone-status" class="phone-dock-status">
+              Selecciona una app. Después conectamos su funcionalidad real.
+            </div>
+          </div>
+        </div>
+
+        <div class="phone-homebar" aria-hidden="true">
+          <span class="phone-home-glow"></span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="dealer-browser" class="dealer-browser hidden" aria-hidden="true">
+    <div class="dealer-window" role="dialog" aria-modal="true" aria-labelledby="dealer-browser-title">
+      <div class="dealer-window-bar">
+        <div class="dealer-window-controls" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="dealer-window-address">roadmotors.city/catalogo</div>
+        <button id="dealer-browser-close" class="dealer-window-close" type="button">Cerrar</button>
+      </div>
+
+      <div class="dealer-window-content">
+        <section class="dealer-window-hero">
+          <div>
+            <div class="dealer-window-kicker">Concesionario premium</div>
+            <h2 id="dealer-browser-title">Road Motors</h2>
+            <p id="dealer-browser-intro-text">Catálogo completo de coches disponibles en el juego.</p>
+          </div>
+
+          <div class="dealer-window-summary">
+            <span id="dealer-browser-count">15 modelos</span>
+            <strong>Entrega inmediata</strong>
+          </div>
+        </section>
+
+        <div id="dealer-car-list" class="dealer-car-list"></div>
+      </div>
+    </div>
+  </aside>
+
   <div id="game-over" class="panel game-over hidden">
     <h2>Fin</h2>
     <p>Pulsa <strong>R</strong> para reiniciar</p>
@@ -208,7 +320,7 @@
         </div>
         <div class="editor-status-row">
           <span>Rotación</span>
-          <strong id="editor-rotation-label">0°</strong>
+          <strong id="editor-rotation-label">0 deg</strong>
         </div>
         <div class="editor-status-row">
           <span>Objetos</span>
@@ -236,26 +348,27 @@
       </div>
 
       <div class="editor-section">
-  <div class="editor-section-title">JSON / Proyecto</div>
+        <div class="editor-section-title">JSON / Proyecto</div>
 
-  <textarea
-    id="editor-json-text"
-    class="editor-json-text"
-    spellcheck="false"
-    placeholder="Aquí aparecerá el JSON exportado o puedes pegar aquí un layout para importarlo."
-  ></textarea>
+        <textarea
+          id="editor-json-text"
+          class="editor-json-text"
+          spellcheck="false"
+          placeholder="Aquí aparecerá el JSON exportado o puedes pegar aquí un layout para importarlo."
+        ></textarea>
 
-  <div class="editor-actions">
-    <button id="editor-export-json" type="button">Exportar JSON</button>
-    <button id="editor-export-module" type="button">Exportar módulo</button>
-    <button id="editor-import-json" type="button">Importar texto</button>
-    <button id="editor-load-project" type="button">Cargar proyecto</button>
-  </div>
+        <div class="editor-actions">
+          <button id="editor-export-json" type="button">Exportar JSON</button>
+          <button id="editor-export-module" type="button">Exportar módulo</button>
+          <button id="editor-import-json" type="button">Importar texto</button>
+          <button id="editor-load-project" type="button">Cargar proyecto</button>
+        </div>
 
-  <p id="editor-json-status" class="editor-note">
-    Exporta a texto para copiarlo. “Exportar módulo” te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
-  </p>
-</div>
+        <p id="editor-json-status" class="editor-note">
+          Exporta a texto para copiarlo. "Exportar módulo" te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
+        </p>
+      </div>
+
       <div class="editor-section">
         <div class="editor-section-title">Ayuda rápida</div>
         <div class="editor-help">

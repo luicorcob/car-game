@@ -11,6 +11,10 @@ import {
   resetPlayerCarEffects
 } from "./car.js";
 import {
+  getPhoneCarCatalog,
+  loadPhoneCarPreview
+} from "./phoneCarCatalog.js";
+import {
   createPlayerCharacter,
   updatePlayerCharacterVisual,
   resetPlayerCharacterVisual
@@ -75,6 +79,15 @@ const sniperScopeEl = document.querySelector("#sniper-scope");
 const sniperScopeZoomEl = document.querySelector("#sniper-scope-zoom");
 
 const promptEl = document.querySelector("#prompt");
+const phoneShellEl = document.querySelector("#phone-shell");
+const phoneHomeViewEl = document.querySelector("#phone-home-view");
+const phoneStatusEl = document.querySelector("#phone-status");
+const phoneAppButtons = Array.from(document.querySelectorAll(".phone-app"));
+const dealerBrowserEl = document.querySelector("#dealer-browser");
+const dealerCarListEl = document.querySelector("#dealer-car-list");
+const dealerBrowserCloseBtn = document.querySelector("#dealer-browser-close");
+const dealerIntroTextEl = document.querySelector("#dealer-browser-intro-text");
+const dealerCountEl = document.querySelector("#dealer-browser-count");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
 const settingsToggleEl = document.querySelector("#settings-toggle");
 const weaponVolumeEl = document.querySelector("#weapon-volume");
@@ -281,6 +294,12 @@ const LEGACY_CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
+let phoneOpen = false;
+let dealerBrowserOpen = false;
+let dealerCatalogBuilt = false;
+let dealerPreviewLoader = null;
+
+const phoneCarCatalog = getPhoneCarCatalog();
 const MAP_CENTER = MAP_SIZE * 0.5;
 const MAP_SCALE = MAP_SIZE / (MAP_EXTENT * 2);
 const ROAD_LINE_REACH = MAP_EXTENT * 1.75;
@@ -571,6 +590,12 @@ function updateMinimapRoads(originX, originZ, heading) {
 }
 
 function updatePrompt(state) {
+  if (phoneOpen) {
+    promptEl.textContent = "";
+    promptEl.classList.add("hidden");
+    return;
+  }
+
   let text = "";
 
   if (state.gameOver) {
@@ -1056,7 +1081,9 @@ function updateUI(state) {
     ? "1ª persona"
     : "3ª persona";
 
-  if (state.gameOver) {
+  if (phoneOpen) {
+    statusEl.textContent = "Usando movil";
+  } else if (state.gameOver) {
     statusEl.textContent = state.failureLabel;
   } else if (state.playerMode === "walking") {
     if (state.missionState.carryingPizza) {
@@ -1101,6 +1128,278 @@ function updateUI(state) {
   gameOverEl.classList.toggle("hidden", !state.gameOver);
 }
 
+function formatPhoneMoney(amount) {
+  return `$${Number(amount).toLocaleString("es-ES")}`;
+}
+
+let phonePreviewRenderer = null;
+const PHONE_PREVIEW_WIDTH = 360;
+const PHONE_PREVIEW_HEIGHT = 210;
+
+function getPhonePreviewRenderer() {
+  if (!phonePreviewRenderer) {
+    phonePreviewRenderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      preserveDrawingBuffer: true
+    });
+    phonePreviewRenderer.setPixelRatio(1);
+    phonePreviewRenderer.setSize(PHONE_PREVIEW_WIDTH, PHONE_PREVIEW_HEIGHT, false);
+    phonePreviewRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    phonePreviewRenderer.setClearColor(0x000000, 0);
+  }
+
+  return phonePreviewRenderer;
+}
+
+async function renderPhoneCarPreview(fileName) {
+  const renderer = getPhonePreviewRenderer();
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    30,
+    PHONE_PREVIEW_WIDTH / PHONE_PREVIEW_HEIGHT,
+    0.1,
+    100
+  );
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 2.4));
+
+  const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
+  keyLight.position.set(4, 6, 5);
+  scene.add(keyLight);
+
+  const rimLight = new THREE.DirectionalLight(0x93c5fd, 1.4);
+  rimLight.position.set(-5, 3, -4);
+  scene.add(rimLight);
+
+  const previewRoot = await loadPhoneCarPreview(fileName);
+  const turntable = new THREE.Group();
+  turntable.add(previewRoot);
+  turntable.rotation.y = Math.PI / 4;
+  scene.add(turntable);
+
+  const box = new THREE.Box3().setFromObject(turntable);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  turntable.position.x -= center.x;
+  turntable.position.y -= box.min.y + size.y * 0.04;
+  turntable.position.z -= center.z;
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  camera.position.set(maxDim * 1.45, maxDim * 0.85, maxDim * 2.25);
+  camera.lookAt(0, size.y * 0.35, 0);
+
+  renderer.clear();
+  renderer.render(scene, camera);
+
+  previewRoot.traverse((child) => {
+    if (!child.isMesh) return;
+
+    if (Array.isArray(child.material)) {
+      for (const material of child.material) {
+        material?.dispose?.();
+      }
+    } else {
+      child.material?.dispose?.();
+    }
+  });
+
+  return renderer.domElement.toDataURL("image/png");
+}
+
+function createDealerCarCard(car) {
+  const card = document.createElement("article");
+  card.className = "phone-car-card";
+  card.dataset.carFile = car.file;
+  card.innerHTML = `
+    <div class="phone-car-media">
+      <div class="phone-car-placeholder">Cargando</div>
+      <img alt="${car.label}" loading="lazy" />
+    </div>
+    <div class="phone-car-info">
+      <h3 class="phone-car-name">${car.label}</h3>
+      <p class="phone-car-category">${car.category}</p>
+      <div class="phone-car-meta">
+        <span class="phone-car-price">${formatPhoneMoney(car.price)}</span>
+        <button class="phone-car-buy" type="button">Comprar</button>
+      </div>
+      <div class="phone-car-spec-grid">
+        <div class="phone-car-spec">
+          <span class="phone-car-spec-label">Potencia</span>
+          <span class="phone-car-spec-value">${car.power} CV</span>
+        </div>
+        <div class="phone-car-spec">
+          <span class="phone-car-spec-label">0-100</span>
+          <span class="phone-car-spec-value">${car.zeroToHundred.toFixed(1)} s</span>
+        </div>
+        <div class="phone-car-spec">
+          <span class="phone-car-spec-label">Punta</span>
+          <span class="phone-car-spec-value">${car.topSpeed} km/h</span>
+        </div>
+        <div class="phone-car-spec">
+          <span class="phone-car-spec-label">Traccion</span>
+          <span class="phone-car-spec-value">${car.drive}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const buyButton = card.querySelector(".phone-car-buy");
+  buyButton.addEventListener("click", () => {
+    dealerIntroTextEl.textContent =
+      `La compra real de ${car.label} la conectamos en el siguiente paso.`;
+  });
+
+  return card;
+}
+
+function buildDealerCatalog() {
+  if (dealerCatalogBuilt) return;
+
+  const fragment = document.createDocumentFragment();
+  for (const car of phoneCarCatalog) {
+    fragment.appendChild(createDealerCarCard(car));
+  }
+
+  dealerCarListEl.appendChild(fragment);
+  dealerCatalogBuilt = true;
+  dealerCountEl.textContent = `${phoneCarCatalog.length} modelos`;
+}
+
+function ensureDealerCatalogPreviews() {
+  if (dealerPreviewLoader) return dealerPreviewLoader;
+
+  dealerPreviewLoader = (async () => {
+    const cards = Array.from(dealerCarListEl.querySelectorAll(".phone-car-card"));
+
+    for (const card of cards) {
+      const fileName = card.dataset.carFile;
+      const image = card.querySelector("img");
+      const placeholder = card.querySelector(".phone-car-placeholder");
+
+      try {
+        const dataUrl = await renderPhoneCarPreview(fileName);
+        image.src = dataUrl;
+        placeholder?.remove();
+      } catch (error) {
+        console.error(`No se pudo crear la preview de ${fileName}`, error);
+        if (placeholder) {
+          placeholder.textContent = "Sin preview";
+        }
+      }
+    }
+  })();
+
+  return dealerPreviewLoader;
+}
+
+function clearMomentaryInputs() {
+  input.left = false;
+  input.right = false;
+  input.accelerate = false;
+  input.brake = false;
+  input.restart = false;
+  input.interact = false;
+  input.toggleNight = false;
+  input.toggleFirstPerson = false;
+  input.jump = false;
+  input.sprint = false;
+  input.fire = false;
+  input.shopPrev = false;
+  input.shopNext = false;
+  input.selectWeapon1 = false;
+  input.selectWeapon2 = false;
+  input.selectWeapon3 = false;
+}
+
+function updateOverlayVisibility() {
+  phoneShellEl.classList.toggle("hidden", !phoneOpen);
+  phoneShellEl.setAttribute("aria-hidden", String(!phoneOpen));
+  dealerBrowserEl.classList.toggle("hidden", !dealerBrowserOpen);
+  dealerBrowserEl.setAttribute("aria-hidden", String(!dealerBrowserOpen));
+
+  const overlayOpen = phoneOpen || dealerBrowserOpen;
+  document.body.classList.toggle("phone-active", overlayOpen);
+
+  if (overlayOpen) {
+    clearMomentaryInputs();
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+  }
+}
+
+function setPhoneOpen(nextOpen) {
+  phoneOpen = nextOpen;
+  if (phoneOpen) {
+    dealerBrowserOpen = false;
+  }
+  phoneHomeViewEl.classList.remove("hidden");
+  updateOverlayVisibility();
+}
+
+function setDealerBrowserOpen(nextOpen) {
+  dealerBrowserOpen = nextOpen;
+  if (dealerBrowserOpen) {
+    phoneOpen = false;
+  }
+  updateOverlayVisibility();
+}
+
+function togglePhone() {
+  setPhoneOpen(!phoneOpen);
+}
+
+function openDealerBrowser() {
+  dealerIntroTextEl.textContent =
+    "Catalogo completo de coches disponibles en el juego.";
+  buildDealerCatalog();
+  ensureDealerCatalogPreviews();
+  setDealerBrowserOpen(true);
+}
+
+function setupPhoneUI() {
+  buildDealerCatalog();
+
+  phoneAppButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const appName = button.querySelector("strong")?.textContent ?? "App";
+      const appId = button.dataset.app ?? "";
+
+      if (appId === "taxi") {
+        const result = game.requestTaxiPickup();
+        phoneStatusEl.textContent = result.message;
+        return;
+      }
+
+      if (appId === "autos") {
+        openDealerBrowser();
+        return;
+      }
+
+      phoneStatusEl.textContent = `${appName} lista. En el siguiente paso conectamos su funcionalidad.`;
+    });
+  });
+
+  dealerBrowserCloseBtn.addEventListener("click", () => {
+    setDealerBrowserOpen(false);
+  });
+
+  phoneShellEl.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+  });
+
+  dealerBrowserEl.addEventListener("mousedown", (event) => {
+    if (event.target === dealerBrowserEl) {
+      setDealerBrowserOpen(false);
+    }
+    event.stopPropagation();
+  });
+}
+
 function restartGame() {
   game.reset();
   resetPlayerCarEffects(playerCar);
@@ -1117,6 +1416,7 @@ function restartGame() {
       interact: false,
       toggleNight: false,
       toggleFirstPerson: false,
+      togglePhone: false,
       jump: false,
       sprint: false,
       debugDamage: false,
@@ -1180,11 +1480,39 @@ function animate() {
   }
 
   if (editor.isActive()) {
+    if (phoneOpen) {
+      setPhoneOpen(false);
+    }
+    if (dealerBrowserOpen) {
+      setDealerBrowserOpen(false);
+    }
     input.restart = false;
     input.toggleNight = false;
     input.toggleFirstPerson = false;
+    input.togglePhone = false;
     input.toggleInventory = false;
     editor.update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (input.togglePhone) {
+    if (dealerBrowserOpen) {
+      setDealerBrowserOpen(false);
+    } else {
+      togglePhone();
+    }
+    input.togglePhone = false;
+  }
+
+  if (phoneOpen || dealerBrowserOpen) {
+    input.restart = false;
+    input.toggleNight = false;
+    input.toggleFirstPerson = false;
+    input.togglePhone = false;
+    clearMomentaryInputs();
+    const idleState = game.update(input, 0, cameraController.getWalkingControlContext());
+    updateUI(idleState);
     renderer.render(scene, camera);
     return;
   }
@@ -1312,5 +1640,7 @@ window.addEventListener("resize", () => {
 
 initMinimap();
 setupCameraSettingsPanel();
+setupPhoneUI();
+updateOverlayVisibility();
 restartGame();
 animate();

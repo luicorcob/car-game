@@ -1064,6 +1064,115 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return true;
   }
 
+  function getSummonTargetPoint(characterState, distance) {
+    const forwardX = Math.sin(characterState.heading);
+    const forwardZ = -Math.cos(characterState.heading);
+
+    return {
+      x: characterState.x - forwardX * distance,
+      z: characterState.z - forwardZ * distance
+    };
+  }
+
+  function isSummonSpotClear(candidatePose) {
+    for (const vehicle of traffic) {
+      const pose = getVehiclePose(vehicle, world);
+      if (!pose) continue;
+
+      const dx = candidatePose.x - pose.x;
+      const dz = candidatePose.z - pose.z;
+      const dist = Math.hypot(dx, dz);
+
+      if (dist < CONFIG.phone.taxiTrafficClearance) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function findTaxiSummonSpot(characterState) {
+    for (
+      let distance = CONFIG.phone.taxiBehindDistance;
+      distance <= CONFIG.phone.taxiMaxBehindDistance;
+      distance += CONFIG.phone.taxiBehindDistanceStep
+    ) {
+      const target = getSummonTargetPoint(characterState, distance);
+      const closestRoad = world.findClosestRoadPose(target.x, target.z, {
+        maxDistance: CONFIG.phone.taxiRoadSearchRadius
+      });
+
+      if (!closestRoad) continue;
+      if (!isSummonSpotClear(closestRoad.pose)) continue;
+
+      return closestRoad;
+    }
+
+    return null;
+  }
+
+  function requestTaxiPickup() {
+    if (gameOver) {
+      return {
+        success: false,
+        message: "No puedes llamar al taxi ahora."
+      };
+    }
+
+    if (playerMode !== "walking") {
+      return {
+        success: false,
+        message: "Solo puedes pedir el taxi cuando vas a pie."
+      };
+    }
+
+    const characterState = character.getState();
+    if (!characterState.onGround) {
+      return {
+        success: false,
+        message: "Espera a estar en el suelo para llamar al coche."
+      };
+    }
+
+    const currentDistance = Math.hypot(
+      characterState.x - player.pose.x,
+      characterState.z - player.pose.z
+    );
+
+    if (currentDistance <= CONFIG.phone.taxiAlreadyNearDistance) {
+      return {
+        success: false,
+        message: "Tu coche ya esta lo bastante cerca."
+      };
+    }
+
+    const summonSpot = findTaxiSummonSpot(characterState);
+    if (!summonSpot) {
+      return {
+        success: false,
+        message: "Acercate un poco mas a una carretera despejada."
+      };
+    }
+
+    player.segment = summonSpot.segment;
+    player.segmentS = summonSpot.segmentS;
+    player.laneOffset = summonSpot.laneOffset;
+    player.laneVelocity = 0;
+    player.speed = 0;
+    player.requestedTurn = 0;
+    player.canLeaveGasStop = false;
+    player.isRefueling = false;
+    player.pose = summonSpot.pose;
+
+    playerCar.position.set(player.pose.x, 0, player.pose.z);
+    playerCar.rotation.set(0, Math.PI - player.pose.heading, 0);
+
+    return {
+      success: true,
+      message: "Taxi listo. Tu coche acaba de aparcar a tu espalda."
+    };
+  }
+
   function updateDrivingInput(input, dt, turnSensitivity = 1) {
     if (gameOver) return;
     const outOfFuel = player.fuel <= 0.0001;
@@ -2292,6 +2401,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   return {
     reset,
     update,
+    requestTaxiPickup
     moveInventorySlot,
     setWeaponSoundVolume,
     getWeaponSoundVolume

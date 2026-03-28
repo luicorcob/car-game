@@ -119,6 +119,15 @@ export const CONFIG = {
     lookDamping: 10
   },
 
+  phone: {
+    taxiBehindDistance: 14,
+    taxiBehindDistanceStep: 4,
+    taxiMaxBehindDistance: 26,
+    taxiRoadSearchRadius: 14,
+    taxiTrafficClearance: 9,
+    taxiAlreadyNearDistance: 9
+  },
+
   traffic: {
     count: 12,
     truckChance: 0.24,

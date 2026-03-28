@@ -46,6 +46,20 @@ const VEHICLE_MODEL_BASE_PATH = "../../assets/models/vehicles/cars/";
 const vehicleModelPath = (fileName) =>
   `${VEHICLE_MODEL_BASE_PATH}${encodeURIComponent(fileName)}`;
 
+const DEFAULT_BUILDING_FIT = {
+  units: "grid",
+  width: 0.92,
+  depth: 0.92,
+  height: 2.8
+};
+
+// Ajusta solo los edificios que lo necesiten (id: edif-XX).
+// Ejemplo:
+// "edif-07": { height: 3.4 },
+// "edif-13": { width: 1.1, depth: 1.1, height: 3.2 }
+const BUILDING_FIT_OVERRIDES = {
+};
+
 const LEGACY_EDITOR_ITEMS = [
   createPrimitiveItem({
     id: "building",
@@ -101,15 +115,17 @@ const BUILDING_GLB_ITEMS = [
   ...Array.from({ length: 28 }, (_, index) => {
     const number = index + 1;
     const pad = String(number).padStart(2, "0");
+    const id = `edif-${pad}`;
+    const fitOverride = BUILDING_FIT_OVERRIDES[id] ?? {};
 
     return createGlbItem({
-      id: `edif-${pad}`,
+      id,
       label: `Edif ${pad}`,
       hint: "Modelo GLB",
       color: "#38bdf8",
       category: "building",
       modelUrl: modelPath(`Edif ${number}.glb`),
-      fit: { units: "grid", width: 0.92, depth: 0.92, height: 2.8 }
+      fit: { ...DEFAULT_BUILDING_FIT, ...fitOverride }
     });
   }),
 
