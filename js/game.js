@@ -44,6 +44,32 @@ const INVENTORY_SLOT_COUNT = 20;
 const HOTBAR_SLOT_COUNT = 5;
 
 const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+const WEAPON_SOUND_CONFIG = {
+  pistol: {
+    src: "../sounds/pistola.mp3",
+    volume: 0.88,
+    poolSize: 5,
+    trimEnd: 0.06
+  },
+  shotgun: {
+    src: "../sounds/escopeta.mp3",
+    volume: 1,
+    poolSize: 4,
+    trimEnd: 0.08
+  },
+  fusil: {
+    src: "../sounds/fusil.mp3",
+    volume: 0.78,
+    poolSize: 8,
+    trimEnd: 0.055
+  },
+  francotirador: {
+    src: "../sounds/franco.mp3",
+    volume: 0.96,
+    poolSize: 4,
+    trimEnd: 0.07
+  }
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -62,6 +88,97 @@ function randRange(min, max) {
 
 function randChoice(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function createSoundBank(soundConfig) {
+  const bank = new Map();
+
+  for (const [weaponId, config] of Object.entries(soundConfig)) {
+    const poolSize = Math.max(1, config.poolSize ?? 4);
+    const instances = Array.from({ length: poolSize }, () => {
+      const audio = new Audio(new URL(config.src, import.meta.url).href);
+      audio.preload = "auto";
+      return {
+        audio,
+        baseVolume: config.volume ?? 1,
+        stopTimer: null
+      };
+    });
+
+    bank.set(weaponId, {
+      trimEnd: Math.max(0, config.trimEnd ?? 0),
+      nextIndex: 0,
+      instances
+    });
+  }
+
+  function scheduleTrim(instance, trimEnd) {
+    if (instance.stopTimer) {
+      clearTimeout(instance.stopTimer);
+      instance.stopTimer = null;
+    }
+
+    const duration = instance.audio.duration;
+    if (!Number.isFinite(duration)) {
+      instance.audio.addEventListener("loadedmetadata", () => {
+        if (!instance.audio.paused) {
+          scheduleTrim(instance, trimEnd);
+        }
+      }, { once: true });
+      return;
+    }
+    if (duration <= trimEnd) return;
+
+    const stopDelayMs = Math.max(0, (duration - trimEnd) * 1000);
+    instance.stopTimer = window.setTimeout(() => {
+      instance.audio.pause();
+      instance.stopTimer = null;
+    }, stopDelayMs);
+  }
+
+  function setMasterVolume(volume) {
+    const normalizedVolume = Math.max(0, Math.min(1, volume ?? 1));
+
+    for (const entry of bank.values()) {
+      for (const instance of entry.instances) {
+        instance.audio.volume = Math.max(
+          0,
+          Math.min(1, instance.baseVolume * normalizedVolume)
+        );
+      }
+    }
+  }
+
+  function play(weaponId) {
+    const entry = bank.get(weaponId);
+    if (!entry) return;
+
+    const availableInstance =
+      entry.instances.find((instance) => instance.audio.paused || instance.audio.ended) ??
+      entry.instances[entry.nextIndex];
+
+    entry.nextIndex = (entry.nextIndex + 1) % entry.instances.length;
+
+    if (availableInstance.stopTimer) {
+      clearTimeout(availableInstance.stopTimer);
+      availableInstance.stopTimer = null;
+    }
+
+    availableInstance.audio.pause();
+    availableInstance.audio.currentTime = 0;
+
+    const playPromise = availableInstance.audio.play();
+    scheduleTrim(availableInstance, entry.trimEnd);
+
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  }
+
+  return {
+    play,
+    setMasterVolume
+  };
 }
 
 function sameLogicalSegment(a, b) {
@@ -207,6 +324,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   };
   const pizzaDelivery = createPizzaDeliveryController(world, inventory);
   const shotTracers = [];
+  const weaponSounds = createSoundBank(WEAPON_SOUND_CONFIG);
 
   const tracerTempMid = new THREE.Vector3();
   const tracerTempDir = new THREE.Vector3();
@@ -249,8 +367,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let shotBloom = 0;
   let playerHealth = CONFIG.health.playerMax;
   let playerHealthRegenTimer = 0;
+  let weaponSoundVolume = 0.5;
   const pedestrianHealth = new Map();
   const MAX_SHOT_BLOOM = 1.6;
+
+  weaponSounds.setMasterVolume(weaponSoundVolume);
 
   function getPlayerHealthRatio() {
     return clamp(playerHealth / CONFIG.health.playerMax, 0, 1);
@@ -1635,6 +1756,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function fireWeapon(shot, characterState, aimControl = null) {
+    weaponSounds.play(shot.weaponId);
     const pelletCount = Math.max(1, shot.pelletCount ?? 1);
 
     for (let pelletIndex = 0; pelletIndex < pelletCount; pelletIndex++) {
@@ -2157,9 +2279,21 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     };
   }
 
+  function setWeaponSoundVolume(volume) {
+    weaponSoundVolume = clamp(volume ?? 0.5, 0, 1);
+    weaponSounds.setMasterVolume(weaponSoundVolume);
+    return weaponSoundVolume;
+  }
+
+  function getWeaponSoundVolume() {
+    return weaponSoundVolume;
+  }
+
   return {
     reset,
     update,
-    moveInventorySlot
+    moveInventorySlot,
+    setWeaponSoundVolume,
+    getWeaponSoundVolume
   };
 }
