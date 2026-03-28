@@ -117,6 +117,9 @@ const CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
+const MAP_CENTER = MAP_SIZE * 0.5;
+const MAP_SCALE = MAP_SIZE / (MAP_EXTENT * 2);
+const ROAD_LINE_REACH = MAP_EXTENT * 1.75;
 
 
 const editorJsonTextEl = document.querySelector("#editor-json-text");
@@ -224,17 +227,44 @@ function setupCameraSettingsPanel() {
   });
 }
 
-function worldToMap(x, z) {
-  const px = ((x + MAP_EXTENT) / (MAP_EXTENT * 2)) * MAP_SIZE;
-  const py = MAP_SIZE - ((z + MAP_EXTENT) / (MAP_EXTENT * 2)) * MAP_SIZE;
-  return { x: px, y: py };
+const minimapRoadLines = [];
+
+function worldToMap(x, z, originX = 0, originZ = 0, heading = 0) {
+  const dx = x - originX;
+  const dz = z - originZ;
+  const cosH = Math.cos(heading);
+  const sinH = Math.sin(heading);
+
+  const localX = dx * cosH + dz * sinH;
+  const localZ = -dx * sinH + dz * cosH;
+
+  return {
+    x: MAP_CENTER + localX * MAP_SCALE,
+    y: MAP_CENTER + localZ * MAP_SCALE,
+    localX,
+    localZ
+  };
 }
 
-function setMarker(el, worldX, worldZ, rotation = 0, visible = true) {
-  el.classList.toggle("hidden", !visible);
-  if (!visible) return;
+function setMarker(
+  el,
+  worldX,
+  worldZ,
+  originX,
+  originZ,
+  heading,
+  rotation = 0,
+  visible = true
+) {
+  const p = worldToMap(worldX, worldZ, originX, originZ, heading);
+  const inBounds =
+    Math.abs(p.localX) <= MAP_EXTENT * 1.05 &&
+    Math.abs(p.localZ) <= MAP_EXTENT * 1.05;
 
-  const p = worldToMap(worldX, worldZ);
+  el.classList.toggle("hidden", !visible || !inBounds);
+  if (!visible) return;
+  if (!inBounds) return;
+
   el.style.left = `${p.x}px`;
   el.style.top = `${p.y}px`;
   el.style.transform = `translate(-50%, -50%) rotate(${rotation}rad)`;
@@ -294,19 +324,41 @@ function initMinimap() {
   const roadCoords = [-2, -1, 0, 1, 2].map((v) => v * CONFIG.blockSize);
 
   for (const coord of roadCoords) {
-    const pV = worldToMap(coord, 0);
-    const pH = worldToMap(0, coord);
+    const vertical = createSvgLine(0, 0, 0, 0, "map-road-line");
+    const horizontal = createSvgLine(0, 0, 0, 0, "map-road-line");
 
-    navMapSvg.appendChild(
-      createSvgLine(pV.x, 0, pV.x, MAP_SIZE, "map-road-line")
-    );
+    minimapRoadLines.push({
+      line: vertical,
+      x1: coord,
+      z1: -ROAD_LINE_REACH,
+      x2: coord,
+      z2: ROAD_LINE_REACH
+    });
+    minimapRoadLines.push({
+      line: horizontal,
+      x1: -ROAD_LINE_REACH,
+      z1: coord,
+      x2: ROAD_LINE_REACH,
+      z2: coord
+    });
 
-    navMapSvg.appendChild(
-      createSvgLine(0, pH.y, MAP_SIZE, pH.y, "map-road-line")
-    );
+    navMapSvg.appendChild(vertical);
+    navMapSvg.appendChild(horizontal);
   }
 
   navMapSvg.appendChild(navRouteEl);
+}
+
+function updateMinimapRoads(originX, originZ, heading) {
+  for (const road of minimapRoadLines) {
+    const start = worldToMap(road.x1, road.z1, originX, originZ, heading);
+    const end = worldToMap(road.x2, road.z2, originX, originZ, heading);
+
+    road.line.setAttribute("x1", start.x);
+    road.line.setAttribute("y1", start.y);
+    road.line.setAttribute("x2", end.x);
+    road.line.setAttribute("y2", end.y);
+  }
 }
 
 function updatePrompt(state) {
@@ -384,45 +436,105 @@ function updateWeaponUI(state) {
 }
 
 function updateMinimap(state) {
-  const playerPoint = worldToMap(state.playerPose.x, state.playerPose.z);
+  const mapFocus =
+    state.playerMode === "driving" ? state.vehiclePose : state.playerPose;
+  const mapHeading = mapFocus.heading;
+  const originX = mapFocus.x;
+  const originZ = mapFocus.z;
+
+  updateMinimapRoads(originX, originZ, mapHeading);
 
   setMarker(
     navPlayerEl,
     state.playerPose.x,
     state.playerPose.z,
-    Math.PI - state.playerPose.heading,
+    originX,
+    originZ,
+    mapHeading,
+    0,
     true
   );
 
   if (pizzeriaInfo) {
-    setMarker(navPizzeriaEl, pizzeriaInfo.center.x, pizzeriaInfo.center.z, 0, true);
+    setMarker(
+      navPizzeriaEl,
+      pizzeriaInfo.center.x,
+      pizzeriaInfo.center.z,
+      originX,
+      originZ,
+      mapHeading,
+      0,
+      true
+    );
   } else {
     navPizzeriaEl.classList.add("hidden");
   }
 
   if (navWeaponShopEl && weaponShopInfo) {
-    setMarker(navWeaponShopEl, weaponShopInfo.center.x, weaponShopInfo.center.z, 0, true);
+    setMarker(
+      navWeaponShopEl,
+      weaponShopInfo.center.x,
+      weaponShopInfo.center.z,
+      originX,
+      originZ,
+      mapHeading,
+      0,
+      true
+    );
   }
 
   for (let i = 0; i < navGasStationEls.length; i++) {
     const el = navGasStationEls[i];
     const info = gasStationInfos[i];
     if (!el || !info) continue;
-    setMarker(el, info.center.x, info.center.z, Math.PI / 4, true);
+    setMarker(
+      el,
+      info.center.x,
+      info.center.z,
+      originX,
+      originZ,
+      mapHeading,
+      Math.PI / 4,
+      true
+    );
   }
 
   const showCar = state.playerMode === "walking";
-  setMarker(navCarEl, state.vehiclePose.x, state.vehiclePose.z, 0, showCar);
+  setMarker(
+    navCarEl,
+    state.vehiclePose.x,
+    state.vehiclePose.z,
+    originX,
+    originZ,
+    mapHeading,
+    Math.PI - (state.vehiclePose.heading - mapHeading),
+    showCar
+  );
 
   const targetPoint = state.missionState.targetPoint;
   const hasTarget = !!targetPoint;
 
   if (hasTarget) {
-    setMarker(navTargetEl, targetPoint.x, targetPoint.z, 0, true);
+    setMarker(
+      navTargetEl,
+      targetPoint.x,
+      targetPoint.z,
+      originX,
+      originZ,
+      mapHeading,
+      0,
+      true
+    );
 
-    const targetMap = worldToMap(targetPoint.x, targetPoint.z);
-    navRouteEl.setAttribute("x1", playerPoint.x);
-    navRouteEl.setAttribute("y1", playerPoint.y);
+    const targetMap = worldToMap(
+      targetPoint.x,
+      targetPoint.z,
+      originX,
+      originZ,
+      mapHeading
+    );
+    navRouteEl.setAttribute("x1", MAP_CENTER);
+    navRouteEl.setAttribute("y1", MAP_CENTER);
     navRouteEl.setAttribute("x2", targetMap.x);
     navRouteEl.setAttribute("y2", targetMap.y);
     navRouteEl.classList.remove("hidden");

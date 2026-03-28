@@ -304,27 +304,41 @@ body {
   z-index: 7;
   pointer-events: none;
   padding: 12px 12px 14px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(9, 16, 28, 0.92), rgba(7, 12, 22, 0.8));
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow:
+    0 18px 36px rgba(2, 6, 23, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
 }
 
 .nav-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 10px;
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.05em;
-  color: var(--muted);
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-transform: uppercase;
 }
 
 #nav-map-title {
-  color: #f8fafc;
+  color: #e2e8f0;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.08);
 }
 
 #nav-map-state {
-  color: #93c5fd;
+  color: #7dd3fc;
   max-width: 110px;
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 11px;
 }
 
 .nav-map-view {
@@ -332,12 +346,43 @@ body {
   width: 220px;
   height: 220px;
   margin: 0 auto;
-  border-radius: 18px;
+  border-radius: 24px;
   overflow: hidden;
   background:
-    radial-gradient(circle at center, rgba(96, 165, 250, 0.08), transparent 70%),
-    linear-gradient(180deg, rgba(8, 20, 35, 0.96), rgba(7, 16, 29, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+    radial-gradient(circle at 50% 48%, rgba(56, 189, 248, 0.18), transparent 38%),
+    radial-gradient(circle at center, rgba(15, 23, 42, 0.32), transparent 72%),
+    linear-gradient(180deg, rgba(10, 22, 39, 0.98), rgba(7, 15, 28, 0.96));
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 -28px 42px rgba(2, 6, 23, 0.34),
+    0 10px 30px rgba(2, 6, 23, 0.24);
+}
+
+.nav-map-view::before,
+.nav-map-view::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.nav-map-view::before {
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at center, black 62%, transparent 100%);
+  opacity: 0.55;
+}
+
+.nav-map-view::after {
+  inset: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.05),
+    inset 0 0 22px rgba(56, 189, 248, 0.06);
 }
 
 .nav-map-svg {
@@ -345,20 +390,24 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
+  filter: drop-shadow(0 0 10px rgba(15, 23, 42, 0.18));
 }
 
 .map-road-line {
-  stroke: rgba(255, 255, 255, 0.12);
-  stroke-width: 12;
+  stroke: rgba(226, 232, 240, 0.16);
+  stroke-width: 11;
   stroke-linecap: round;
+  filter: drop-shadow(0 0 8px rgba(148, 163, 184, 0.08));
 }
 
 .map-route {
-  stroke: rgba(249, 115, 22, 0.95);
-  stroke-width: 3.5;
+  stroke: rgba(251, 146, 60, 0.98);
+  stroke-width: 3.8;
   stroke-linecap: round;
-  stroke-dasharray: 9 7;
-  filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.35));
+  stroke-dasharray: 10 8;
+  filter:
+    drop-shadow(0 0 8px rgba(249, 115, 22, 0.36))
+    drop-shadow(0 0 18px rgba(251, 146, 60, 0.12));
 }
 
 .map-marker {
@@ -367,59 +416,71 @@ body {
   height: 14px;
   border-radius: 50%;
   pointer-events: none;
+  transition:
+    transform 120ms linear,
+    filter 160ms ease,
+    opacity 160ms ease;
 }
 
 .map-marker.player {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 0;
-  background: #ffffff;
+  background:
+    linear-gradient(180deg, #ffffff, #dbeafe);
   clip-path: polygon(50% 0%, 100% 100%, 50% 76%, 0% 100%);
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
+  filter:
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.34))
+    drop-shadow(0 0 18px rgba(56, 189, 248, 0.14));
 }
 
 .map-marker.car {
-  width: 11px;
-  height: 11px;
-  background: #ef4444;
-  border-radius: 2px;
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(180deg, #fb7185, #ef4444);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 2px rgba(127, 29, 29, 0.28),
+    0 0 10px rgba(239, 68, 68, 0.42);
 }
 
 .map-marker.target {
   width: 16px;
   height: 16px;
-  background: #60a5fa;
+  background: radial-gradient(circle at 35% 35%, #dbeafe, #38bdf8 58%, #0284c7);
+  border-radius: 50%;
   box-shadow:
-    0 0 0 4px rgba(96, 165, 250, 0.18),
-    0 0 12px rgba(96, 165, 250, 0.4);
+    0 0 0 4px rgba(56, 189, 248, 0.14),
+    0 0 16px rgba(56, 189, 248, 0.38);
 }
 
 .map-marker.pizzeria {
   width: 12px;
   height: 12px;
-  background: #f97316;
-  box-shadow: 0 0 10px rgba(249, 115, 22, 0.45);
+  background: linear-gradient(180deg, #fb923c, #ea580c);
+  box-shadow:
+    0 0 0 3px rgba(249, 115, 22, 0.12),
+    0 0 10px rgba(249, 115, 22, 0.36);
 }
 
 .map-marker.weapon-shop {
   width: 12px;
   height: 12px;
-  border-radius: 3px;
-  background: #ef4444;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f87171, #dc2626);
   box-shadow:
-    0 0 0 3px rgba(239, 68, 68, 0.16),
-    0 0 12px rgba(239, 68, 68, 0.42);
+    0 0 0 3px rgba(239, 68, 68, 0.12),
+    0 0 12px rgba(239, 68, 68, 0.32);
 }
 
 .map-marker.gas-station {
   width: 10px;
   height: 10px;
-  border-radius: 2px;
-  background: #22c55e;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #4ade80, #16a34a);
   box-shadow:
-    0 0 0 3px rgba(34, 197, 94, 0.15),
-    0 0 12px rgba(34, 197, 94, 0.38);
+    0 0 0 3px rgba(34, 197, 94, 0.12),
+    0 0 12px rgba(34, 197, 94, 0.28);
 }
 
 .prompt {
