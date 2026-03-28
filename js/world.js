@@ -256,6 +256,7 @@ export function createWorld(scene) {
 
     getStartRoad: graph.getStartRoad,
     getTrafficSpawnRoads: graph.getTrafficSpawnRoads,
+    findClosestRoadPose: graph.findClosestRoadPose,
 
     evaluateSegment,
     buildRoadSegment: graph.buildRoadSegment,

@@ -622,11 +622,11 @@ function createInterior(playerRig, vehicleRig) {
   interiorGroup.add(windFrameRight);
 
   const fpCameraAnchor = new THREE.Object3D();
-  fpCameraAnchor.position.set(-0.16, 1.8, 1.42);
+  fpCameraAnchor.position.set(0, 1.28, 2.18);
   interiorGroup.add(fpCameraAnchor);
 
   const fpLookAnchor = new THREE.Object3D();
-  fpLookAnchor.position.set(-0.16, 1.77, 26);
+  fpLookAnchor.position.set(0, 1.24, 28);
   interiorGroup.add(fpLookAnchor);
 
   playerRig.firstPersonCameraAnchor = fpCameraAnchor;

@@ -23,26 +23,27 @@
       <h1>Road Driver 3D</h1>
       <p><strong>Coche:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
       <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar.</p>
-      <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
-      <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
+      <p><strong>Interaccion:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
+      <p><strong>Camara:</strong> V alterna entre 3a y 1a persona.</p>
       <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
+      <p><strong>Movil:</strong> P saca/guarda el telefono.</p>
       <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
     <div class="panel hud">
       <div>Velocidad: <span id="speed">0</span> km/h</div>
-      <div>Puntuación: <span id="score">0</span></div>
+      <div>Puntuacion: <span id="score">0</span></div>
       <div>Dinero: <span id="money">$0</span></div>
-      <div>Vista: <span id="camera-mode">3ª persona</span></div>
+      <div>Vista: <span id="camera-mode">3a persona</span></div>
       <div>FPS: <span id="fps">0</span></div>
       <div>Estado: <span id="status">Jugando</span></div>
     </div>
   </div>
 
   <div id="mission-card" class="panel mission-card">
-    <div class="mission-kicker">MISIÓN</div>
-    <div id="mission-title" class="mission-title">Pizzería Vesuvio</div>
-    <div id="mission-objective" class="mission-objective">Entra en la pizzería y recoge un pedido en la barra</div>
+    <div class="mission-kicker">MISION</div>
+    <div id="mission-title" class="mission-title">Pizzeria Vesuvio</div>
+    <div id="mission-objective" class="mission-objective">Entra en la pizzeria y recoge un pedido en la barra</div>
     <div class="mission-footer">
       <span id="mission-meta">Sin pedido</span>
       <span id="mission-count">0 entregas</span>
@@ -61,7 +62,7 @@
 
     <div class="fuel-meta">
       <span id="fuel-liters">100.0 L</span>
-      <span id="fuel-state">Óptimo</span>
+      <span id="fuel-state">Optimo</span>
     </div>
   </div>
 
@@ -69,13 +70,13 @@
     <div class="weapon-kicker">ARMAMENTO</div>
     <div id="weapon-name" class="weapon-name">Sin arma</div>
     <div id="weapon-ammo" class="weapon-ammo">Sin equipar</div>
-    <div id="weapon-state" class="weapon-state">Compra en Armería Atlas</div>
+    <div id="weapon-state" class="weapon-state">Compra en Armeria Atlas</div>
   </div>
 
   <div id="nav-map-card" class="panel nav-map-card">
     <div class="nav-map-header">
       <span id="nav-map-title">Mapa de ciudad</span>
-      <span id="nav-map-state">Pizzería Vesuvio</span>
+      <span id="nav-map-state">Pizzeria Vesuvio</span>
     </div>
 
     <div class="nav-map-view">
@@ -92,6 +93,117 @@
 
   <div id="prompt" class="prompt hidden"></div>
 
+  <aside id="phone-shell" class="phone-shell hidden" aria-hidden="true">
+    <div class="phone-device">
+      <div class="phone-edge phone-edge-left" aria-hidden="true"></div>
+      <div class="phone-edge phone-edge-right" aria-hidden="true"></div>
+
+      <div class="phone-face">
+        <div class="phone-hardware" aria-hidden="true">
+          <span class="phone-camera-dot"></span>
+          <span class="phone-speaker-slot"></span>
+          <span class="phone-brand">Fruit</span>
+        </div>
+
+        <div class="phone-screen">
+          <div class="phone-statusbar">
+            <div class="phone-signal">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span class="phone-status-day">Sat</span>
+            <span class="phone-status-time">09:00</span>
+            <span class="phone-battery"></span>
+          </div>
+
+          <div class="phone-titlebar">
+            <span id="phone-title-label">Contacts</span>
+          </div>
+
+          <div id="phone-home-view" class="phone-home-view">
+            <div class="phone-wallpaper"></div>
+
+            <div class="phone-app-grid">
+              <button class="phone-app" type="button" data-app="correo">
+                <span class="phone-badge">15</span>
+                <span class="phone-app-icon app-mail"></span>
+                <strong>Correo</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="mensajes">
+                <span class="phone-badge">3</span>
+                <span class="phone-app-icon app-messages"></span>
+                <strong>Mensajes</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="mapa">
+                <span class="phone-app-icon app-map"></span>
+                <strong>Mapa</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="taxi">
+                <span class="phone-app-icon app-taxi"></span>
+                <strong>Taxi</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="autos">
+                <span class="phone-app-icon app-dealer"></span>
+                <strong>Autos</strong>
+              </button>
+
+              <button class="phone-app" type="button" data-app="camara">
+                <span class="phone-app-icon app-camera"></span>
+                <strong>Camara</strong>
+              </button>
+            </div>
+
+            <div id="phone-status" class="phone-dock-status">
+              Selecciona una app. Despues conectamos su funcionalidad real.
+            </div>
+          </div>
+
+        </div>
+
+        <div class="phone-homebar" aria-hidden="true">
+          <span class="phone-home-glow"></span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <aside id="dealer-browser" class="dealer-browser hidden" aria-hidden="true">
+    <div class="dealer-window" role="dialog" aria-modal="true" aria-labelledby="dealer-browser-title">
+      <div class="dealer-window-bar">
+        <div class="dealer-window-controls" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="dealer-window-address">roadmotors.city/catalogo</div>
+        <button id="dealer-browser-close" class="dealer-window-close" type="button">Cerrar</button>
+      </div>
+
+      <div class="dealer-window-content">
+        <section class="dealer-window-hero">
+          <div>
+            <div class="dealer-window-kicker">Concesionario premium</div>
+            <h2 id="dealer-browser-title">Road Motors</h2>
+            <p id="dealer-browser-intro-text">Catalogo completo de coches disponibles en el juego.</p>
+          </div>
+
+          <div class="dealer-window-summary">
+            <span id="dealer-browser-count">15 modelos</span>
+            <strong>Entrega inmediata</strong>
+          </div>
+        </section>
+
+        <div id="dealer-car-list" class="dealer-car-list"></div>
+      </div>
+    </div>
+  </aside>
+
   <div id="game-over" class="panel game-over hidden">
     <h2>Fin</h2>
     <p>Pulsa <strong>R</strong> para reiniciar</p>
@@ -100,16 +212,16 @@
   <button id="settings-toggle" class="settings-toggle" type="button">Ajustes</button>
 
   <section id="camera-settings" class="panel camera-settings hidden">
-    <div class="camera-settings-kicker">AJUSTES DE CÁMARA</div>
+    <div class="camera-settings-kicker">AJUSTES DE CAMARA</div>
 
     <label class="camera-setting">
-      <span>Sensibilidad 1ª persona</span>
+      <span>Sensibilidad 1a persona</span>
       <input id="fp-sens" type="range" min="0.0004" max="0.01" step="0.0001" />
       <strong id="fp-sens-value">0.0022</strong>
     </label>
 
     <label class="camera-setting">
-      <span>Giro 3ª persona (WASD)</span>
+      <span>Giro 3a persona (WASD)</span>
       <input id="tp-sens" type="range" min="0.25" max="2.5" step="0.05" />
       <strong id="tp-sens-value">1.00x</strong>
     </label>
@@ -128,7 +240,7 @@
       </div>
 
       <p class="editor-summary">
-        Diseña tu ciudad con una rejilla visual. Todo lo que coloques se puede guardar en JSON y volver a cargar.
+        Disena tu ciudad con una rejilla visual. Todo lo que coloques se puede guardar en JSON y volver a cargar.
       </p>
 
       <div class="editor-section">
@@ -142,12 +254,12 @@
           <strong id="editor-selected-label">Ninguno</strong>
         </div>
         <div class="editor-status-row">
-          <span>Posición</span>
+          <span>Posicion</span>
           <strong id="editor-cursor-label">0, 0</strong>
         </div>
         <div class="editor-status-row">
-          <span>Rotación</span>
-          <strong id="editor-rotation-label">0°</strong>
+          <span>Rotacion</span>
+          <strong id="editor-rotation-label">0 deg</strong>
         </div>
         <div class="editor-status-row">
           <span>Objetos</span>
@@ -175,31 +287,32 @@
       </div>
 
       <div class="editor-section">
-  <div class="editor-section-title">JSON / Proyecto</div>
+        <div class="editor-section-title">JSON / Proyecto</div>
 
-  <textarea
-    id="editor-json-text"
-    class="editor-json-text"
-    spellcheck="false"
-    placeholder="Aquí aparecerá el JSON exportado o puedes pegar aquí un layout para importarlo."
-  ></textarea>
+        <textarea
+          id="editor-json-text"
+          class="editor-json-text"
+          spellcheck="false"
+          placeholder="Aqui aparecera el JSON exportado o puedes pegar aqui un layout para importarlo."
+        ></textarea>
 
-  <div class="editor-actions">
-    <button id="editor-export-json" type="button">Exportar JSON</button>
-    <button id="editor-export-module" type="button">Exportar módulo</button>
-    <button id="editor-import-json" type="button">Importar texto</button>
-    <button id="editor-load-project" type="button">Cargar proyecto</button>
-  </div>
+        <div class="editor-actions">
+          <button id="editor-export-json" type="button">Exportar JSON</button>
+          <button id="editor-export-module" type="button">Exportar modulo</button>
+          <button id="editor-import-json" type="button">Importar texto</button>
+          <button id="editor-load-project" type="button">Cargar proyecto</button>
+        </div>
 
-  <p id="editor-json-status" class="editor-note">
-    Exporta a texto para copiarlo. “Exportar módulo” te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
-  </p>
-</div>
+        <p id="editor-json-status" class="editor-note">
+          Exporta a texto para copiarlo. "Exportar modulo" te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
+        </p>
+      </div>
+
       <div class="editor-section">
-        <div class="editor-section-title">Ayuda rápida</div>
+        <div class="editor-section-title">Ayuda rapida</div>
         <div class="editor-help">
           <div><strong>M</strong> abrir/cerrar creador</div>
-          <div><strong>WASD / flechas</strong> mover cámara</div>
+          <div><strong>WASD / flechas</strong> mover camara</div>
           <div><strong>R</strong> rotar pieza</div>
           <div><strong>Click izquierdo</strong> colocar</div>
           <div><strong>Click derecho</strong> borrar</div>

@@ -8,6 +8,7 @@ export function createInput() {
     interact: false,
     toggleNight: false,
     toggleFirstPerson: false,
+    togglePhone: false,
     jump: false,
     sprint: false,
 
@@ -84,11 +85,18 @@ export function createInput() {
       return;
     }
 
+    if (event.code === "KeyP") {
+      if (!event.repeat) {
+        input.togglePhone = true;
+      }
+      return;
+    }
+
     setKey(event.code, true);
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC") return;
+    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC" || event.code === "KeyP") return;
     setKey(event.code, false);
   });
 
@@ -117,7 +125,7 @@ export function createInput() {
 
   window.addEventListener("blur", () => {
     for (const key of Object.keys(input)) {
-      if (key === "toggleNight" || key === "toggleFirstPerson") continue;
+      if (key === "toggleNight" || key === "toggleFirstPerson" || key === "togglePhone") continue;
       input[key] = false;
     }
   });
