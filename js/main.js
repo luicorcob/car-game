@@ -106,6 +106,13 @@ let lastPlayerMode = "driving";
 let draggedInventorySlotIndex = null;
 let crosshairAnimTime = 0;
 
+function normalizeAngle(angle) {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
 const input = createInput();
 const world = createWorld(scene);
 
@@ -511,7 +518,19 @@ function updateCrosshair(state) {
   const swayAmp = (0.8 + speedNorm * 2.1 + sprintFactor * 1.8) * (1 - aimBlend * 0.78);
   const offsetX = Math.sin(crosshairAnimTime * 5.2) * swayAmp * 0.32;
   const offsetY = Math.abs(Math.sin(crosshairAnimTime * 10.4)) * swayAmp;
-  const spread = THREE.MathUtils.lerp(18, 11, aimBlend) + speedNorm * 12 + sprintFactor * 5;
+  const baseSpread = THREE.MathUtils.lerp(18, 11, aimBlend) + speedNorm * 12 + sprintFactor * 5;
+  let edgePenalty = 0;
+
+  if (!cameraController.isFirstPerson()) {
+    const edgePressure = THREE.MathUtils.clamp(
+      state.characterState?.cursorEdgePressure ?? 0,
+      0,
+      1
+    );
+    edgePenalty = edgePressure * 16;
+  }
+
+  const spread = baseSpread + edgePenalty;
   const cursor = cameraController.getCursorScreenPosition();
   const crosshairOffsetX = cameraController.isFirstPerson()
     ? offsetX
@@ -1052,5 +1071,3 @@ initMinimap();
 setupCameraSettingsPanel();
 restartGame();
 animate();
-
-

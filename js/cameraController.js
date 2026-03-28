@@ -62,14 +62,13 @@ export function createCameraController(camera, lookTarget, options = {}) {
   );
   const mouseNdc = new THREE.Vector2(0, 0);
   const raycaster = new THREE.Raycaster();
-  const aimPlane = new THREE.Plane();
   const tempDirection = new THREE.Vector3();
   const tempForward = new THREE.Vector3();
   const tempPose = new THREE.Vector3();
   const tempLook = new THREE.Vector3();
   const tempAimDirection = new THREE.Vector3();
-  const tempAimPoint = new THREE.Vector3();
-  const tempAimOrigin = new THREE.Vector3();
+  const thirdPersonHorizontalEdgePenaltyStart = 0.3;
+  const thirdPersonVerticalEdgePenaltyStart = 0.6;
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -91,6 +90,24 @@ export function createCameraController(camera, lookTarget, options = {}) {
     while (a > Math.PI) a -= Math.PI * 2;
     while (a < -Math.PI) a += Math.PI * 2;
     return a;
+  }
+
+  function getThirdPersonCursorEdgePressure() {
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const normX = Math.abs((mouseScreen.x / width) * 2 - 1);
+    const normY = Math.abs((mouseScreen.y / height) * 2 - 1);
+    const xPressure = clamp(
+      (normX - thirdPersonHorizontalEdgePenaltyStart) / (1 - thirdPersonHorizontalEdgePenaltyStart),
+      0,
+      1
+    );
+    const yPressure = clamp(
+      (normY - thirdPersonVerticalEdgePenaltyStart) / (1 - thirdPersonVerticalEdgePenaltyStart),
+      0,
+      1
+    );
+    return Math.max(xPressure ** 1.85, yPressure ** 1.7);
   }
 
   function setPointerLocked(value) {
@@ -595,6 +612,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
         aiming: false,
         aimBlend: 0,
         aimDirection: null,
+        cursorEdgePressure: 0,
         faceAim: false,
         faceHeading: null,
         thirdPersonTurnSensitivity
@@ -610,6 +628,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
         aiming: false,
         aimBlend: 0,
         aimDirection: null,
+        cursorEdgePressure: 0,
         faceAim: false,
         faceHeading: null,
         thirdPersonTurnSensitivity
@@ -617,24 +636,8 @@ export function createCameraController(camera, lookTarget, options = {}) {
     }
 
     if (!firstPerson) {
-      const playerX = lastState?.playerPose?.x ?? 0;
-      const playerZ = lastState?.playerPose?.z ?? 0;
-      const playerY =
-        (lastState?.characterState?.jumpOffset ?? 0) +
-        1.42 -
-        (lastState?.characterState?.crouchBlend ?? 0) * 0.28;
-
       raycaster.setFromCamera(mouseNdc, camera);
-
-      aimPlane.set(new THREE.Vector3(0, 1, 0), -playerY);
-      const hitAimPlane = raycaster.ray.intersectPlane(aimPlane, tempAimPoint);
-
-      if (!hitAimPlane) {
-        tempAimPoint.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, 36);
-      }
-
-      tempAimOrigin.set(playerX, playerY, playerZ);
-      tempAimDirection.copy(tempAimPoint).sub(tempAimOrigin);
+      tempAimDirection.copy(raycaster.ray.direction);
 
       const flatLength = Math.hypot(tempAimDirection.x, tempAimDirection.z);
       if (flatLength < 0.0001) {
@@ -661,6 +664,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
           y: tempAimDirection.y,
           z: tempAimDirection.z
         },
+        cursorEdgePressure: getThirdPersonCursorEdgePressure(),
         faceAim: false,
         faceHeading: null,
         thirdPersonTurnSensitivity
@@ -685,6 +689,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
         y: tempAimDirection.y,
         z: tempAimDirection.z
       },
+      cursorEdgePressure: 0,
       faceAim: false,
       faceHeading: null,
       thirdPersonTurnSensitivity

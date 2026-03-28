@@ -48,6 +48,13 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeAngle(angle) {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
 function randRange(min, max) {
   return min + Math.random() * (max - min);
 }
@@ -1361,6 +1368,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const planarSpeed = characterState.planarSpeed ?? 0;
     const moveFactor = Math.min(1.35, planarSpeed / CONFIG.onFoot.runSpeed);
     const aimingMultiplier = THREE.MathUtils.lerp(1, 0.24, aimBlend);
+    const thirdPersonEdgePenalty = !aimControl?.firstPerson
+      ? clamp(aimControl?.cursorEdgePressure ?? 0, 0, 1)
+      : 0;
     const spreadByWeapon = {
       pistol: 0.026,
       shotgun: 0.08,
@@ -1369,7 +1379,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const baseSpread =
       (spreadByWeapon[shot?.weaponId] ?? 0.028) *
       (1 + moveFactor * 0.95) *
-      aimingMultiplier;
+      aimingMultiplier *
+      (1 + thirdPersonEdgePenalty * 1.5);
     const spreadX = (Math.random() * 2 - 1) * baseSpread;
     const spreadY = (Math.random() * 2 - 1) * baseSpread;
     const muzzlePose = getPlayerCharacterWeaponMuzzlePose(playerCharacter);
@@ -1520,8 +1531,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     }
 
     const visibleDistance = bestHit
-      ? Math.min(bestHit.forward, shot.visualTracerLength ?? 9)
-      : (shot.visualTracerLength ?? 9);
+      ? Math.min(bestHit.forward, shot.range)
+      : shot.range;
 
     const tracerEnd = start3D.clone().addScaledVector(
       tracerForward3D,
@@ -1835,6 +1846,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         aiming: !!controlContext?.aiming,
         aimBlend: typeof controlContext?.aimBlend === "number"
           ? controlContext.aimBlend
+          : 0,
+        cursorEdgePressure: typeof controlContext?.cursorEdgePressure === "number"
+          ? controlContext.cursorEdgePressure
           : 0,
         crouching: !!characterState.crouching,
         crouchBlend: characterState.crouchBlend ?? 0,

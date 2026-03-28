@@ -508,6 +508,8 @@ export function createPlayerCharacter() {
     yaw: Math.PI,
     aimBlend: 0,
     crouchBlend: 0,
+    thirdPersonAimYaw: 0,
+    thirdPersonAimPitch: 0,
     forceHiddenForFirstPerson: false,
 
     tempPosition: new THREE.Vector3(),
@@ -580,6 +582,8 @@ export function resetPlayerCharacterVisual(character) {
   rig.yaw = Math.PI;
   rig.aimBlend = 0;
   rig.crouchBlend = 0;
+  rig.thirdPersonAimYaw = 0;
+  rig.thirdPersonAimPitch = 0;
   rig.forceHiddenForFirstPerson = false;
   character.visible = false;
   character.position.set(0, 0, 0);
@@ -648,12 +652,12 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   const carryingPizza = !!state.carryingPizza;
   const aimHeading = typeof state.aimHeading === "number" ? state.aimHeading : state.heading;
   const aimPitch = typeof state.aimPitch === "number" ? state.aimPitch : 0;
-  const thirdPersonAimYaw = THREE.MathUtils.clamp(
+  const rawThirdPersonAimYaw = THREE.MathUtils.clamp(
     normalizeAngle(aimHeading - state.heading),
-    -1.05,
-    1.05
+    -0.48,
+    0.48
   );
-  const thirdPersonAimPitch = THREE.MathUtils.clamp(aimPitch, -0.8, 0.7);
+  const rawThirdPersonAimPitch = THREE.MathUtils.clamp(aimPitch, -0.32, 0.24);
   const aiming = !!state.aiming;
   const crouchBlend = typeof state.crouchBlend === "number" ? state.crouchBlend : 0;
   const weaponState = state.weapon ?? {
@@ -715,6 +719,20 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   rig.root.position.y = bob - rig.crouchBlend * 0.42;
 
   const hasWeapon = weaponState.hasEquippedWeapon && !carryingPizza;
+  rig.thirdPersonAimYaw = THREE.MathUtils.damp(
+    rig.thirdPersonAimYaw,
+    hasWeapon && !inFirstPerson ? rawThirdPersonAimYaw : 0,
+    12,
+    dt
+  );
+  rig.thirdPersonAimPitch = THREE.MathUtils.damp(
+    rig.thirdPersonAimPitch,
+    hasWeapon && !inFirstPerson ? rawThirdPersonAimPitch : 0,
+    12,
+    dt
+  );
+  const thirdPersonAimYaw = rig.thirdPersonAimYaw;
+  const thirdPersonAimPitch = rig.thirdPersonAimPitch;
   const targetAimBlend = inFirstPerson && aiming && hasWeapon ? 1 : 0;
   rig.aimBlend = THREE.MathUtils.damp(rig.aimBlend, targetAimBlend, 16, dt);
   const muzzlePulse = weaponState.muzzlePulse ?? 0;
