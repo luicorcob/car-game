@@ -17,7 +17,10 @@ export function createInput() {
     shopNext: false,
     selectWeapon1: false,
     selectWeapon2: false,
-    selectWeapon3: false
+    selectWeapon3: false,
+    selectWeapon4: false,
+    selectWeapon5: false,
+    toggleInventory: false
   };
 
   const keyMap = {
@@ -41,6 +44,8 @@ export function createInput() {
     Digit1: "selectWeapon1",
     Digit2: "selectWeapon2",
     Digit3: "selectWeapon3",
+    Digit4: "selectWeapon4",
+    Digit5: "selectWeapon5",
     KeyX: "fire"
   };
 
@@ -90,11 +95,18 @@ export function createInput() {
       return;
     }
 
+    if (event.code === "KeyI") {
+      if (!event.repeat) {
+        input.toggleInventory = true;
+      }
+      return;
+    }
+
     setKey(event.code, true);
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC") return;
+    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC" || event.code === "KeyI") return;
     setKey(event.code, false);
   });
 
@@ -123,7 +135,7 @@ export function createInput() {
 
   window.addEventListener("blur", () => {
     for (const key of Object.keys(input)) {
-      if (key === "toggleNight" || key === "toggleFirstPerson") continue;
+      if (key === "toggleNight" || key === "toggleFirstPerson" || key === "toggleInventory") continue;
       input[key] = false;
     }
   });

@@ -25,7 +25,7 @@
       <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar.</p>
       <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
       <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
-      <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
+      <p><strong>Inventario:</strong> 1/2/3/4/5 cambia slot, I abre la mochila y Q/F cambia producto en tienda.</p>
       <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
@@ -70,6 +70,29 @@
     <div id="weapon-name" class="weapon-name">Sin arma</div>
     <div id="weapon-ammo" class="weapon-ammo">Sin equipar</div>
     <div id="weapon-state" class="weapon-state">Compra en Armería Atlas</div>
+  </div>
+
+  <div id="hotbar" class="hotbar">
+    <div class="hotbar-slot"><span class="hotbar-key">1</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">2</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">3</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">4</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">5</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+  </div>
+
+  <div id="inventory-menu" class="inventory-menu hidden">
+    <div class="inventory-menu-shell">
+      <div class="inventory-menu-top">
+        <div>
+          <div class="inventory-menu-kicker">MOCHILA</div>
+          <h2>Inventario</h2>
+        </div>
+        <div class="inventory-menu-close">Pulsa I para cerrar</div>
+      </div>
+      <div id="inventory-menu-summary" class="inventory-menu-summary">Pizzas 0/3 · Gasolina 0 L</div>
+      <div class="inventory-menu-section-title">Mochila</div>
+      <div id="inventory-menu-grid" class="inventory-menu-grid"></div>
+    </div>
   </div>
 
   <div id="nav-map-card" class="panel nav-map-card">

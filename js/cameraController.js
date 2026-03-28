@@ -50,6 +50,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
     options.firstPersonToggleCooldown ?? CONFIG.camera.firstPersonToggleCooldown ?? 0.12;
 
   let pointerLocked = false;
+  let pointerLockBlocked = false;
   let mouseYaw = 0;
   let mousePitch = 0;
 
@@ -94,6 +95,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
   function onMouseMove(event) {
     if (!firstPerson) return;
+    if (pointerLockBlocked) return;
     if (usePointerLock && !pointerLocked) return;
 
     const yawDelta = event.movementX * firstPersonSensitivity;
@@ -126,6 +128,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
   function onMouseDown(event) {
     if (isInteractiveElement(event.target)) return;
     if (!firstPerson || !usePointerLock) return;
+    if (pointerLockBlocked) return;
     if (document.pointerLockElement !== domElement) {
       domElement.requestPointerLock?.();
     }
@@ -216,6 +219,17 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
   function isFirstPerson() {
     return firstPerson;
+  }
+
+  function setPointerLockBlocked(blocked) {
+    pointerLockBlocked = !!blocked;
+
+    if (pointerLockBlocked) {
+      setPointerLocked(false);
+      if (document.pointerLockElement === domElement) {
+        document.exitPointerLock?.();
+      }
+    }
   }
 
   function buildThirdPersonRig(state) {
@@ -557,6 +571,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
     togglePerspective,
     setFirstPerson,
     isFirstPerson,
+    setPointerLockBlocked,
     setSettings,
     getSettings,
     getWalkingControlContext,

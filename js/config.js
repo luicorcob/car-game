@@ -11,7 +11,7 @@ export const CONFIG = {
     braking: 0.03,
     handbrakeBraking: 0.018,
     drag: 0.016,
-    coastDrag: 0.0008,
+    coastDrag: 0.0042,
     handbrakeDrag: 0.014,
     handbrakeDriftMinSpeed: 0.18,
     handbrakeDriftGrip: 0.26,
@@ -142,6 +142,9 @@ export const CONFIG = {
   fuel: {
     max: 100,
     start: 100,
+    portableCanLiters: 20,
+    portableCanPrice: 16,
+    portableCanMax: 3,
 
     consumptionPerUnit: 0.028,
     idlePerSecond: 0.012,
@@ -160,7 +163,8 @@ export const CONFIG = {
   pizzaDelivery: {
     pickupRadius: 2.3,
     deliveryRadius: 2.85,
-    reward: 10
+    reward: 10,
+    inventoryCapacity: 3
   },
 
   minimap: {

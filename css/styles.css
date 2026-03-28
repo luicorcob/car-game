@@ -258,7 +258,7 @@ body {
 .weapon-card {
   position: fixed;
   left: 18px;
-  bottom: 182px;
+  bottom: 240px;
   width: 295px;
   z-index: 7;
   pointer-events: none;
@@ -294,6 +294,169 @@ body {
   font-size: 13px;
   font-weight: 700;
   color: var(--muted);
+}
+
+.hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 110px));
+  gap: 10px;
+  z-index: 22;
+  pointer-events: none;
+}
+
+.hotbar-slot {
+  min-height: 74px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(12, 20, 34, 0.94), rgba(7, 12, 22, 0.82));
+  box-shadow: 0 14px 28px rgba(2, 6, 23, 0.34);
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.hotbar-slot.active {
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow:
+    0 14px 28px rgba(2, 6, 23, 0.34),
+    0 0 18px rgba(56, 189, 248, 0.18);
+  transform: translateY(-3px);
+}
+
+.hotbar-slot.empty {
+  opacity: 0.6;
+}
+
+.hotbar-key {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: #7dd3fc;
+}
+
+.hotbar-label {
+  font-size: 14px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.hotbar-detail {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.inventory-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(2, 6, 23, 0.58);
+  backdrop-filter: blur(12px);
+  display: grid;
+  place-items: center;
+}
+
+.inventory-menu-shell {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-radius: 28px;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(10, 18, 32, 0.97), rgba(6, 10, 18, 0.94));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+}
+
+.inventory-menu-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.inventory-menu-kicker {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  color: #7dd3fc;
+  margin-bottom: 6px;
+}
+
+.inventory-menu-top h2 {
+  margin: 0;
+  font-size: 34px;
+  color: #f8fafc;
+}
+
+.inventory-menu-close,
+.inventory-menu-summary {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.inventory-menu-summary {
+  margin-bottom: 16px;
+}
+
+.inventory-menu-section-title {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: #7dd3fc;
+  text-transform: uppercase;
+}
+
+.inventory-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.inventory-slot {
+  min-height: 98px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.inventory-slot.active {
+  border-color: rgba(56, 189, 248, 0.48);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.14);
+}
+
+.inventory-slot.empty {
+  opacity: 0.55;
+}
+
+.inventory-slot-key {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: #7dd3fc;
+}
+
+.inventory-slot strong {
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.inventory-slot span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .nav-map-card {
@@ -511,6 +674,10 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 20;
   white-space: nowrap;
+}
+
+.prompt.above-hotbar {
+  bottom: 112px;
 }
 
 .game-over {
@@ -925,7 +1092,9 @@ body.editor-active #ui,
 body.editor-active #mission-card,
 body.editor-active #fuel-card,
 body.editor-active #weapon-card,
+body.editor-active #hotbar,
 body.editor-active #nav-map-card,
+body.editor-active #inventory-menu,
 body.editor-active #camera-settings,
 body.editor-active #settings-toggle,
 body.editor-active #prompt,
@@ -968,5 +1137,33 @@ body.editor-active #game {
   .editor-actions,
   .editor-palette-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hotbar {
+    grid-template-columns: repeat(5, minmax(0, 64px));
+    gap: 6px;
+    bottom: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  .hotbar-slot {
+    min-height: 66px;
+    padding: 8px;
+  }
+
+  .hotbar-label {
+    font-size: 12px;
+  }
+
+  .hotbar-detail {
+    font-size: 11px;
+  }
+
+  .prompt.above-hotbar {
+    bottom: 88px;
+  }
+
+  .inventory-menu-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

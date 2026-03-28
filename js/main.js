@@ -55,6 +55,11 @@ const weaponCardEl = document.querySelector("#weapon-card");
 const weaponNameEl = document.querySelector("#weapon-name");
 const weaponAmmoEl = document.querySelector("#weapon-ammo");
 const weaponStateEl = document.querySelector("#weapon-state");
+const hotbarEl = document.querySelector("#hotbar");
+const hotbarSlotEls = Array.from(document.querySelectorAll(".hotbar-slot"));
+const inventoryMenuEl = document.querySelector("#inventory-menu");
+const inventoryMenuSummaryEl = document.querySelector("#inventory-menu-summary");
+const inventoryMenuGridEl = document.querySelector("#inventory-menu-grid");
 
 const promptEl = document.querySelector("#prompt");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
@@ -94,6 +99,8 @@ const camera = new THREE.PerspectiveCamera(
 
 const clock = new THREE.Clock();
 let fpsSmoothed = 0;
+let inventoryMenuOpen = false;
+let lastPlayerMode = "driving";
 
 const input = createInput();
 const world = createWorld(scene);
@@ -376,6 +383,10 @@ function updatePrompt(state) {
 
   promptEl.textContent = text;
   promptEl.classList.toggle("hidden", !text);
+  promptEl.classList.toggle(
+    "above-hotbar",
+    state.playerMode === "walking"
+  );
 }
 
 function updateFuelUI(state) {
@@ -433,6 +444,113 @@ function updateWeaponUI(state) {
 
   weaponCardEl.classList.toggle("armed", weapon.hasEquippedWeapon);
   weaponCardEl.classList.toggle("shop", weapon.inShop);
+}
+
+function legacyUpdateInventoryUIEntries(state) {
+  const walking = state.playerMode === "walking";
+  const inventory = state.inventoryHud;
+  const entries = inventory?.entries ?? [];
+  const summaryText =
+    `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} · Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
+
+  const hotbarSlots = inventory?.hotbarSlots ?? [];
+  hotbarSlotEls.forEach((slotEl, index) => {
+    const slot = hotbarSlots[index];
+    const labelEl = slotEl.querySelector(".hotbar-label");
+    const detailEl = slotEl.querySelector(".hotbar-detail");
+
+    labelEl.textContent = slot?.empty ? "Vacío" : (slot?.label ?? "Vacío");
+    detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+
+    slotEl.classList.toggle("active", (inventory?.selectedSlot ?? 0) === index);
+    slotEl.classList.toggle("empty", !!slot?.empty);
+  });
+
+  inventoryMenuSummaryEl.textContent = summaryText;
+
+  const backpackSlotCount = Math.max(15, entries.length);
+  inventoryMenuGridEl.innerHTML = Array.from({ length: backpackSlotCount }, (_, index) => {
+    const entry = entries[index];
+    const classes = ["inventory-slot", entry ? "" : "empty"].filter(Boolean).join(" ");
+    return `<div class="${classes}"><strong>${entry?.label ?? "Vacío"}</strong><span>${entry?.detail ?? ""}</span></div>`;
+  }).join("");
+
+  inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
+  hotbarEl.classList.toggle("hidden", !walking);
+}
+
+function legacyUpdateInventoryUISlotsBroken(state) {
+  const walking = state.playerMode === "walking";
+  const inventory = state.inventoryHud;
+  const slots = inventory?.slots ?? [];
+  const summaryText =
+    `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} Â· Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
+
+  const hotbarSlots = inventory?.hotbarSlots ?? [];
+  hotbarSlotEls.forEach((slotEl, index) => {
+    const slot = hotbarSlots[index];
+    const labelEl = slotEl.querySelector(".hotbar-label");
+    const detailEl = slotEl.querySelector(".hotbar-detail");
+
+    labelEl.textContent = slot?.empty ? "VacÃ­o" : (slot?.label ?? "VacÃ­o");
+    detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+
+    slotEl.classList.toggle("active", (inventory?.selectedSlot ?? 0) === index);
+    slotEl.classList.toggle("empty", !!slot?.empty);
+  });
+
+  inventoryMenuSummaryEl.textContent = summaryText;
+
+  inventoryMenuGridEl.innerHTML = slots.map((slot) => {
+    const classes = [
+      "inventory-slot",
+      slot?.empty ? "empty" : "",
+      slot?.active ? "active" : ""
+    ].filter(Boolean).join(" ");
+    const keyMarkup = slot?.key ? `<div class="inventory-slot-key">${slot.key}</div>` : "";
+    return `<div class="${classes}">${keyMarkup}<strong>${slot?.empty ? "VacÃ­o" : (slot?.label ?? "VacÃ­o")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
+  }).join("");
+
+  inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
+  hotbarEl.classList.toggle("hidden", !walking);
+}
+
+function updateInventoryUI(state) {
+  const walking = state.playerMode === "walking";
+  const inventory = state.inventoryHud;
+  const slots = inventory?.slots ?? [];
+  const summaryText =
+    `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} - Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
+
+  const hotbarSlots = inventory?.hotbarSlots ?? [];
+  hotbarSlotEls.forEach((slotEl, index) => {
+    const slot = hotbarSlots[index];
+    const labelEl = slotEl.querySelector(".hotbar-label");
+    const detailEl = slotEl.querySelector(".hotbar-detail");
+
+    labelEl.textContent = slot?.empty ? "Vacio" : (slot?.label ?? "Vacio");
+    detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+
+    slotEl.classList.toggle("active", (inventory?.selectedSlot ?? 0) === index);
+    slotEl.classList.toggle("empty", !!slot?.empty);
+  });
+
+  inventoryMenuSummaryEl.textContent = summaryText;
+
+  const backpackSlots = slots.slice(5);
+  inventoryMenuGridEl.innerHTML = backpackSlots.map((slot) => {
+    const classes = [
+      "inventory-slot",
+      slot?.empty ? "empty" : "",
+      slot?.active ? "active" : ""
+    ].filter(Boolean).join(" ");
+    const slotNumber = (slot?.index ?? 0) + 1;
+    const keyMarkup = `<div class="inventory-slot-key">${slotNumber}</div>`;
+    return `<div class="${classes}">${keyMarkup}<strong>${slot?.empty ? "Vacio" : (slot?.label ?? "Vacio")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
+  }).join("");
+
+  inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
+  hotbarEl.classList.toggle("hidden", !walking);
 }
 
 function updateMinimap(state) {
@@ -594,6 +712,7 @@ function updateUI(state) {
   updateFuelUI(state);
   updateMissionUI(state);
   updateWeaponUI(state);
+  updateInventoryUI(state);
   updateMinimap(state);
   updatePrompt(state);
   gameOverEl.classList.toggle("hidden", !state.gameOver);
@@ -622,7 +741,10 @@ function restartGame() {
       shopNext: false,
       selectWeapon1: false,
       selectWeapon2: false,
-      selectWeapon3: false
+      selectWeapon3: false,
+      selectWeapon4: false,
+      selectWeapon5: false,
+      toggleInventory: false
     },
     0,
     null
@@ -673,6 +795,7 @@ function animate() {
     input.restart = false;
     input.toggleNight = false;
     input.toggleFirstPerson = false;
+    input.toggleInventory = false;
     editor.update(dt);
     renderer.render(scene, camera);
     return;
@@ -688,13 +811,41 @@ function animate() {
     input.toggleFirstPerson = false;
   }
 
+  if (input.toggleInventory && lastPlayerMode === "walking") {
+    inventoryMenuOpen = !inventoryMenuOpen;
+  }
+  input.toggleInventory = false;
+
+  cameraController.setPointerLockBlocked(inventoryMenuOpen && cameraController.isFirstPerson());
+
   if (input.restart) {
     restartGame();
     input.restart = false;
   }
 
   const controlContext = cameraController.getWalkingControlContext();
-  const state = game.update(input, dt, controlContext);
+  const frameInput = inventoryMenuOpen
+    ? {
+        ...input,
+        left: false,
+        right: false,
+        accelerate: false,
+        brake: false,
+        handbrake: false,
+        interact: false,
+        jump: false,
+        sprint: false,
+        fire: false,
+        shopPrev: false,
+        shopNext: false
+      }
+    : input;
+  const state = game.update(frameInput, dt, controlContext);
+  lastPlayerMode = state.playerMode;
+
+  if (state.playerMode !== "walking" && inventoryMenuOpen) {
+    inventoryMenuOpen = false;
+  }
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, dt);
   world.updateChoiceSigns(

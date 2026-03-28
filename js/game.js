@@ -39,6 +39,9 @@ const TRUCK_TRAILER_COLORS = [
   0xfef3c7
 ];
 
+const INVENTORY_SLOT_COUNT = 20;
+const HOTBAR_SLOT_COUNT = 5;
+
 const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
 
 function clamp(value, min, max) {
@@ -186,8 +189,15 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   const traffic = [];
   const character = createCharacterController(world);
   const destruction = createDestructionController(scene);
-  const pizzaDelivery = createPizzaDeliveryController(world);
   const weapons = createWeaponController();
+  const inventory = {
+    pizzaBoxes: 0,
+    maxPizzaBoxes: CONFIG.pizzaDelivery.inventoryCapacity ?? 3,
+    fuelCans: 0,
+    maxFuelCans: CONFIG.fuel.portableCanMax ?? 3,
+    fuelPerCan: CONFIG.fuel.portableCanLiters ?? 20
+  };
+  const pizzaDelivery = createPizzaDeliveryController(world, inventory);
   const shotTracers = [];
 
   const tracerTempMid = new THREE.Vector3();
@@ -217,10 +227,16 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let money = 0;
   let gameOver = false;
   let prevInteract = false;
+  let prevSelectSlot1 = false;
+  let prevSelectSlot2 = false;
+  let prevSelectSlot3 = false;
+  let prevSelectSlot4 = false;
+  let prevSelectSlot5 = false;
   let playerMode = "driving";
   let failureLabel = "Chocado";
   let characterDestroyed = false;
   let activeRefuelStationId = null;
+  let selectedHotbarSlot = 0;
 
   function clearShotTracers() {
     while (shotTracers.length) {
@@ -403,6 +419,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     destruction.reset();
     pizzaDelivery.reset();
     weapons.reset();
+    weapons.grantWeapon("pistol", null, { equip: true });
+    weapons.grantWeapon("shotgun");
 
     player.segment = world.getStartRoad();
     player.segmentS = 0;
@@ -416,6 +434,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.fuel = CONFIG.fuel.start;
     player.canLeaveGasStop = false;
     player.isRefueling = false;
+    inventory.pizzaBoxes = 0;
+    inventory.fuelCans = 0;
     activeRefuelStationId = null;
 
     playerCar.position.set(player.pose.x, 0, player.pose.z);
@@ -428,11 +448,207 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     money = 1000;
     gameOver = false;
     prevInteract = false;
+    prevSelectSlot1 = false;
+    prevSelectSlot2 = false;
+    prevSelectSlot3 = false;
+    prevSelectSlot4 = false;
+    prevSelectSlot5 = false;
     playerMode = "driving";
     failureLabel = "Chocado";
     characterDestroyed = false;
+    selectedHotbarSlot = 0;
 
     spawnTraffic();
+  }
+
+  function getWalkingGasStationAccess(playerPose) {
+    if (!playerPose) return null;
+
+    const stationInfos = world.getGasStationInfos?.() ?? [];
+    const maxDistanceSq = 4.8 * 4.8;
+    let best = null;
+    let bestDistanceSq = Infinity;
+
+    for (const station of stationInfos) {
+      for (const pump of station.pumpPositions ?? []) {
+        const distSq = distanceSq2D(playerPose, pump);
+        if (distSq > maxDistanceSq || distSq >= bestDistanceSq) continue;
+
+        bestDistanceSq = distSq;
+        best = {
+          stationId: station.id,
+          brand: station.brand,
+          distanceSq: distSq
+        };
+      }
+    }
+
+    return best;
+  }
+
+  function buildInventoryEntries() {
+    const entries = [];
+
+    for (const weapon of weapons.getInventoryEntries()) {
+      entries.push({
+        id: weapon.id,
+        kind: "weapon",
+        label: weapon.label,
+        detail: `${weapon.ammo} balas`,
+        weaponId: weapon.id
+      });
+    }
+
+    if (inventory.pizzaBoxes > 0) {
+      entries.push({
+        id: "pizza",
+        kind: "pizza",
+        label: "Pizza",
+        detail: `${inventory.pizzaBoxes}/${inventory.maxPizzaBoxes}`
+      });
+    }
+
+    if (inventory.fuelCans > 0) {
+      entries.push({
+        id: "fuel",
+        kind: "fuel",
+        label: "Gasolina",
+        detail: `${inventory.fuelCans} garrafa${inventory.fuelCans === 1 ? "" : "s"} · ${inventory.fuelCans * inventory.fuelPerCan} L`
+      });
+    }
+
+    return entries;
+  }
+
+  function buildInventorySlots() {
+    const entries = buildInventoryEntries();
+    return Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => {
+      const entry = entries[index];
+      if (!entry) return null;
+
+      if (entry.kind === "weapon") {
+        return {
+          id: entry.id,
+          kind: "weapon",
+          label: entry.label,
+          detail: entry.detail,
+          weaponId: entry.weaponId
+        };
+      }
+
+      if (entry.kind === "pizza") {
+        return {
+          id: entry.id,
+          kind: "pizza",
+          label: entry.label,
+          detail: entry.detail
+        };
+      }
+
+      if (entry.kind === "fuel") {
+        return {
+          id: entry.id,
+          kind: "fuel",
+          label: entry.label,
+          detail: entry.detail
+        };
+      }
+
+      return null;
+    });
+  }
+
+  function buildHotbarSlots() {
+    const slots = buildInventorySlots();
+    return Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => {
+      const entry = slots[index];
+      if (!entry) return null;
+
+      if (entry.kind === "weapon") {
+        return {
+          kind: "weapon",
+          label: entry.label,
+          detail: entry.detail.replace(" balas", ""),
+          weaponId: entry.weaponId
+        };
+      }
+
+      if (entry.kind === "pizza") {
+        return {
+          kind: "pizza",
+          label: entry.label,
+          detail: `${inventory.pizzaBoxes}`
+        };
+      }
+
+      if (entry.kind === "fuel") {
+        return {
+          kind: "fuel",
+          label: entry.label,
+          detail: `${inventory.fuelCans}`
+        };
+      }
+
+      return null;
+    });
+  }
+
+  function syncSelectedHotbarSlot() {
+    const hotbarSlots = buildHotbarSlots();
+    const selectedItem = hotbarSlots[selectedHotbarSlot] ?? null;
+
+    if (selectedItem?.kind === "weapon" && selectedItem.weaponId) {
+      weapons.equipWeapon(selectedItem.weaponId);
+      return;
+    }
+
+    weapons.holsterWeapon();
+  }
+
+  function updateHotbarSelection(input) {
+    const select1Held = !!input.selectWeapon1;
+    const select2Held = !!input.selectWeapon2;
+    const select3Held = !!input.selectWeapon3;
+    const select4Held = !!input.selectWeapon4;
+    const select5Held = !!input.selectWeapon5;
+
+    if (select1Held && !prevSelectSlot1) selectedHotbarSlot = 0;
+    if (select2Held && !prevSelectSlot2) selectedHotbarSlot = 1;
+    if (select3Held && !prevSelectSlot3) selectedHotbarSlot = 2;
+    if (select4Held && !prevSelectSlot4) selectedHotbarSlot = 3;
+    if (select5Held && !prevSelectSlot5) selectedHotbarSlot = 4;
+
+    prevSelectSlot1 = select1Held;
+    prevSelectSlot2 = select2Held;
+    prevSelectSlot3 = select3Held;
+    prevSelectSlot4 = select4Held;
+    prevSelectSlot5 = select5Held;
+
+    syncSelectedHotbarSlot();
+  }
+
+  function getSelectedHotbarItem() {
+    const hotbarSlots = buildHotbarSlots();
+    return {
+      hotbarSlots,
+      selectedItem: hotbarSlots[selectedHotbarSlot] ?? null
+    };
+  }
+
+  function canPourFuelToCar(characterState) {
+    if (playerMode !== "walking") return false;
+    if (!characterState) return false;
+    if (inventory.fuelCans <= 0) return false;
+    if (player.fuel >= CONFIG.fuel.max - 0.001) return false;
+    return canEnterVehicle(characterState);
+  }
+
+  function tryPourFuelToCar(characterState) {
+    if (!canPourFuelToCar(characterState)) return false;
+
+    inventory.fuelCans -= 1;
+    player.fuel = Math.min(CONFIG.fuel.max, player.fuel + inventory.fuelPerCan);
+    return true;
   }
 
   function getGasStationAccess() {
@@ -1226,10 +1442,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     let moveDistance = 0;
     let upcomingIntersection = null;
     let gasAccess = null;
+    let walkingGasAccess = null;
     let missionInteraction = null;
     let inWeaponShopCounter = false;
 
     if (!gameOver) {
+      updateHotbarSelection(input);
+
       if (playerMode === "driving") {
         weapons.update(dt, input, {
           playerMode,
@@ -1276,6 +1495,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           playerMode,
           characterStateNow
         );
+        walkingGasAccess = getWalkingGasStationAccess(characterStateNow);
+        const { selectedItem } = getSelectedHotbarItem();
 
         const interactPressed = isInteractPressed(input);
         const justPressed = interactPressed && !prevInteract;
@@ -1285,6 +1506,16 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           if (purchase.success) {
             money = purchase.money;
           }
+        } else if (justPressed && walkingGasAccess) {
+          if (
+            inventory.fuelCans < inventory.maxFuelCans &&
+            money >= (CONFIG.fuel.portableCanPrice ?? 16)
+          ) {
+            inventory.fuelCans += 1;
+            money -= (CONFIG.fuel.portableCanPrice ?? 16);
+          }
+        } else if (justPressed && selectedItem?.kind === "fuel") {
+          tryPourFuelToCar(characterStateNow);
         } else if (justPressed && missionInteraction) {
           const result = pizzaDelivery.handleInteract(playerMode, characterStateNow);
           if (result.handled && result.type === "deliver") {
@@ -1295,9 +1526,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         }
 
         const missionStateNow = pizzaDelivery.getState();
+        const hotbarStateNow = getSelectedHotbarItem();
         const shot = weapons.tryFire({
           playerMode,
-          blocked: missionStateNow.carryingPizza
+          blocked: hotbarStateNow.selectedItem?.kind !== "weapon"
         });
 
         if (shot) {
@@ -1333,6 +1565,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         ? (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road")
         : (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road");
     const weaponHud = weapons.getHUDState(inWeaponShopCounter);
+    const inventorySlots = buildInventorySlots();
+    const portableFuelLiters = inventory.fuelCans * inventory.fuelPerCan;
+    const hotbarState = getSelectedHotbarItem();
 
     let actionPrompt = "";
 
@@ -1340,11 +1575,22 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       if (playerMode === "walking") {
         if (inWeaponShopCounter) {
           actionPrompt = weapons.getShopPrompt(money);
+        } else if (walkingGasAccess) {
+          if (inventory.fuelCans >= inventory.maxFuelCans) {
+            actionPrompt = `Garrafas al máximo · ${walkingGasAccess.brand}`;
+          } else if (money < (CONFIG.fuel.portableCanPrice ?? 16)) {
+            actionPrompt = `Falta dinero para garrafa · ${walkingGasAccess.brand}`;
+          } else {
+            actionPrompt =
+              `Llenar garrafa [E] · ${inventory.fuelPerCan} L · $${CONFIG.fuel.portableCanPrice ?? 16} · ${walkingGasAccess.brand}`;
+          }
+        } else if (hotbarState.selectedItem?.kind === "fuel" && canPourFuelToCar(characterState)) {
+          actionPrompt = `Verter garrafa [E] · +${inventory.fuelPerCan} L al coche`;
         } else if (missionInteraction?.prompt) {
           actionPrompt = missionInteraction.prompt;
         } else if (canEnterVehicle(characterState)) {
           actionPrompt = "Entrar al coche [E]";
-        } else if (weaponHud.hasEquippedWeapon && !missionState.carryingPizza) {
+        } else if (weaponHud.hasEquippedWeapon && hotbarState.selectedItem?.kind === "weapon") {
           actionPrompt = `Disparar [Click] · ${weaponHud.equippedShortLabel} · ${weaponHud.ammo} balas`;
         }
       } else if (gasAccess) {
@@ -1437,6 +1683,32 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       actionPrompt,
       missionState,
       weaponHud,
+      inventoryHud: {
+        itemCount: inventorySlots.filter(Boolean).length,
+        pizzaBoxes: inventory.pizzaBoxes,
+        pizzaCapacity: inventory.maxPizzaBoxes,
+        fuelCans: inventory.fuelCans,
+        portableFuelLiters,
+        slots: inventorySlots.map((slot, index) => ({
+          index,
+          key: index < HOTBAR_SLOT_COUNT ? index + 1 : null,
+          label: slot?.label ?? "",
+          detail: slot?.detail ?? "",
+          kind: slot?.kind ?? null,
+          empty: !slot,
+          active: index === selectedHotbarSlot
+        })),
+        selectedSlot: selectedHotbarSlot,
+        activeItemKind: hotbarState.selectedItem?.kind ?? null,
+        activeItemLabel: hotbarState.selectedItem?.label ?? "",
+        hotbarSlots: hotbarState.hotbarSlots.map((slot, index) => ({
+          index,
+          key: index + 1,
+          label: slot?.label ?? "",
+          detail: slot?.detail ?? "",
+          empty: !slot
+        }))
+      },
 
       characterState: {
         visible: playerMode === "walking" && !characterDestroyed,
@@ -1446,7 +1718,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         planarSpeed: characterState.planarSpeed,
         jumpOffset: characterState.jumpOffset,
         onGround: characterState.onGround,
-        carryingPizza: missionState.carryingPizza,
+        carryingPizza:
+          hotbarState.selectedItem?.kind === "pizza" && inventory.pizzaBoxes > 0,
         weapon: weapons.getVisualState()
       }
     };

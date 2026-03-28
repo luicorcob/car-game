@@ -94,6 +94,7 @@ export function createWeaponController() {
   let prevSelect1 = false;
   let prevSelect2 = false;
   let prevSelect3 = false;
+  let holstered = false;
 
   function getOwnedWeaponIds() {
     return WEAPON_CATALOG
@@ -102,6 +103,13 @@ export function createWeaponController() {
   }
 
   function ensureEquippedWeaponValid() {
+    if (holstered) {
+      if (!equippedId || !inventory[equippedId]?.owned) {
+        equippedId = null;
+      }
+      return;
+    }
+
     if (equippedId && inventory[equippedId]?.owned) return;
 
     const owned = getOwnedWeaponIds();
@@ -110,8 +118,29 @@ export function createWeaponController() {
 
   function equipWeapon(weaponId) {
     if (!inventory[weaponId]?.owned) return false;
+    holstered = false;
     equippedId = weaponId;
     return true;
+  }
+
+  function grantWeapon(weaponId, ammo = null, { equip = false } = {}) {
+    const weapon = CATALOG_BY_ID.get(weaponId);
+    if (!weapon || !inventory[weaponId]) return false;
+
+    inventory[weaponId].owned = true;
+    inventory[weaponId].ammo = ammo ?? weapon.starterAmmo;
+
+    if (equip) {
+      holstered = false;
+      equippedId = weaponId;
+    }
+
+    return true;
+  }
+
+  function holsterWeapon() {
+    holstered = true;
+    equippedId = null;
   }
 
   function cycleOwnedWeapons(direction) {
@@ -163,15 +192,8 @@ export function createWeaponController() {
 
     const shopPrevHeld = !!input.shopPrev;
     const shopNextHeld = !!input.shopNext;
-    const select1Held = !!input.selectWeapon1;
-    const select2Held = !!input.selectWeapon2;
-    const select3Held = !!input.selectWeapon3;
-
     const shopPrevJust = shopPrevHeld && !prevShopPrev;
     const shopNextJust = shopNextHeld && !prevShopNext;
-    const select1Just = select1Held && !prevSelect1;
-    const select2Just = select2Held && !prevSelect2;
-    const select3Just = select3Held && !prevSelect3;
 
     if (playerMode === "walking") {
       if (inShop) {
@@ -181,14 +203,7 @@ export function createWeaponController() {
         if (shopNextJust) {
           shopIndex = clampIndex(shopIndex + 1, shopItems.length);
         }
-      } else {
-        if (shopPrevJust) cycleOwnedWeapons(-1);
-        if (shopNextJust) cycleOwnedWeapons(1);
       }
-
-      if (select1Just) equipWeapon("pistol");
-      if (select2Just) equipWeapon("shotgun");
-      if (select3Just) equipWeapon("rifle");
     }
 
     fireHeld = !!input.fire;
@@ -197,9 +212,9 @@ export function createWeaponController() {
     prevFireHeld = fireHeld;
     prevShopPrev = shopPrevHeld;
     prevShopNext = shopNextHeld;
-    prevSelect1 = select1Held;
-    prevSelect2 = select2Held;
-    prevSelect3 = select3Held;
+    prevSelect1 = !!input.selectWeapon1;
+    prevSelect2 = !!input.selectWeapon2;
+    prevSelect3 = !!input.selectWeapon3;
 
     ensureEquippedWeaponValid();
   }
@@ -232,6 +247,7 @@ export function createWeaponController() {
 
       inventory[weapon.id].owned = true;
       inventory[weapon.id].ammo += weapon.starterAmmo;
+      holstered = false;
       equippedId = weapon.id;
 
       return {
@@ -342,10 +358,22 @@ export function createWeaponController() {
     };
   }
 
+  function getInventoryEntries() {
+    return WEAPON_CATALOG
+      .filter((weapon) => inventory[weapon.id].owned)
+      .map((weapon) => ({
+        id: weapon.id,
+        kind: "weapon",
+        label: weapon.shortLabel,
+        ammo: inventory[weapon.id].ammo,
+        equipped: equippedId === weapon.id
+      }));
+  }
+
   function getVisualState() {
     return {
       equippedId,
-      hasEquippedWeapon: !!equippedId,
+      hasEquippedWeapon: !!equippedId && !holstered,
       muzzlePulse
     };
   }
@@ -357,6 +385,7 @@ export function createWeaponController() {
     }
 
     equippedId = null;
+    holstered = false;
     shopIndex = 0;
     cooldown = 0;
     muzzlePulse = 0;
@@ -377,8 +406,12 @@ export function createWeaponController() {
     update,
     tryBuy,
     tryFire,
+    grantWeapon,
+    equipWeapon,
+    holsterWeapon,
     getShopPrompt,
     getHUDState,
-    getVisualState
+    getVisualState,
+    getInventoryEntries
   };
 }
