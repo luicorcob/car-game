@@ -113,6 +113,18 @@ export function createCameraController(camera, lookTarget, options = {}) {
     return Math.max(xPressure ** 1.85, yPressure ** 1.7);
   }
 
+  function getThirdPersonMoveHeading() {
+    camera.getWorldDirection(tempDirection);
+    tempDirection.y = 0;
+
+    if (tempDirection.lengthSq() < 0.0001) {
+      return lastState?.playerPose?.heading ?? 0;
+    }
+
+    tempDirection.normalize();
+    return Math.atan2(tempDirection.x, -tempDirection.z);
+  }
+
   function setPointerLocked(value) {
     pointerLocked = value;
   }
@@ -672,9 +684,10 @@ export function createCameraController(camera, lookTarget, options = {}) {
     }
 
     if (!firstPerson && !hasEquippedWeapon) {
+      const moveHeading = getThirdPersonMoveHeading();
       return {
         firstPerson: false,
-        moveHeading: null,
+        moveHeading,
         aimHeading: null,
         aimPitch: null,
         aiming: false,
@@ -689,6 +702,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
     }
 
     if (!firstPerson) {
+      const moveHeading = getThirdPersonMoveHeading();
       raycaster.setFromCamera(mouseNdc, camera);
       tempAimDirection.copy(raycaster.ray.direction);
 
@@ -707,7 +721,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
       return {
         firstPerson: false,
-        moveHeading: null,
+        moveHeading,
         aimHeading,
         aimPitch,
         aiming: aimDownSights,

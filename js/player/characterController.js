@@ -64,13 +64,19 @@ export function createCharacterController(world) {
         ? control.thirdPersonTurnSensitivity
         : 1;
     const aimingTurnMultiplier = !useFirstPersonMovement && aiming ? 0.55 : 1;
-    const moveHeading =
+    const inputForward = (input.accelerate ? 1 : 0) + (input.brake ? -1 : 0);
+    const inputRight = (input.right ? 1 : 0) + (input.left ? -1 : 0);
+    const requestedMoveHeading =
       typeof control?.moveHeading === "number"
         ? control.moveHeading
         : state.heading;
-
-    const inputForward = (input.accelerate ? 1 : 0) + (input.brake ? -1 : 0);
-    const inputRight = (input.right ? 1 : 0) + (input.left ? -1 : 0);
+    const straightForwardBackOnly =
+      !useFirstPersonMovement &&
+      Math.abs(inputRight) < 0.1 &&
+      Math.abs(inputForward) > 0.1;
+    const moveHeading = straightForwardBackOnly
+      ? state.heading
+      : requestedMoveHeading;
 
     const forwardX = Math.sin(moveHeading);
     const forwardZ = -Math.cos(moveHeading);
@@ -134,11 +140,23 @@ export function createCharacterController(world) {
 
     const shouldUpdateHeading = useFirstPersonMovement || isMoving || faceAim;
     if (shouldUpdateHeading) {
+      const backwardOnly =
+        !useFirstPersonMovement &&
+        !faceAim &&
+        inputForward < -0.1 &&
+        Math.abs(inputRight) < 0.1;
+      const forwardOnly =
+        !useFirstPersonMovement &&
+        !faceAim &&
+        inputForward > 0.1 &&
+        Math.abs(inputRight) < 0.1;
       const targetHeading = useFirstPersonMovement
         ? moveHeading
         : faceAim && typeof control?.faceHeading === "number"
           ? control.faceHeading
-          : Math.atan2(moveX, -moveZ);
+          : (backwardOnly || forwardOnly)
+            ? state.heading
+            : Math.atan2(moveX, -moveZ);
       const delta = normalizeAngle(targetHeading - state.heading);
       const turnSpeed = useFirstPersonMovement
         ? CONFIG.onFoot.turnSpeed * 2
