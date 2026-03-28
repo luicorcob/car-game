@@ -1635,97 +1635,101 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function fireWeapon(shot, characterState, aimControl = null) {
-    const shotPose = getShotOriginAndDirection(shot, characterState, aimControl);
-    const {
-      origin2D,
-      start3D,
-      forwardX,
-      forwardZ,
-      rightX,
-      rightZ,
-      tracerForward3D,
-      aimStart
-    } = shotPose;
+    const pelletCount = Math.max(1, shot.pelletCount ?? 1);
 
-    let bestHit = null;
+    for (let pelletIndex = 0; pelletIndex < pelletCount; pelletIndex++) {
+      const shotPose = getShotOriginAndDirection(shot, characterState, aimControl);
+      const {
+        origin2D,
+        start3D,
+        forwardX,
+        forwardZ,
+        rightX,
+        rightZ,
+        tracerForward3D,
+        aimStart
+      } = shotPose;
 
-    for (const ped of world.getPedestrianTargets()) {
-      const dx = ped.x - origin2D.x;
-      const dz = ped.z - origin2D.z;
+      let bestHit = null;
 
-      const forward = dx * forwardX + dz * forwardZ;
-      const lateral = dx * rightX + dz * rightZ;
-      const maxLateral = ped.radius + shot.hitRadius * 0.48;
+      for (const ped of world.getPedestrianTargets()) {
+        const dx = ped.x - origin2D.x;
+        const dz = ped.z - origin2D.z;
 
-      if (forward < 0 || forward > shot.range) continue;
-      if (Math.abs(lateral) > maxLateral) continue;
+        const forward = dx * forwardX + dz * forwardZ;
+        const lateral = dx * rightX + dz * rightZ;
+        const maxLateral = ped.radius + shot.hitRadius * 0.48;
 
-      if (!bestHit || forward < bestHit.forward) {
-        bestHit = {
-          type: "pedestrian",
-          id: ped.id,
-          x: ped.x,
-          z: ped.z,
-          forward,
-          lateral,
-          heading: typeof aimControl?.aimHeading === "number"
-            ? aimControl.aimHeading
-            : characterState.heading,
-          intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02,
-          damage: shot.damage ?? 0
-        };
+        if (forward < 0 || forward > shot.range) continue;
+        if (Math.abs(lateral) > maxLateral) continue;
+
+        if (!bestHit || forward < bestHit.forward) {
+          bestHit = {
+            type: "pedestrian",
+            id: ped.id,
+            x: ped.x,
+            z: ped.z,
+            forward,
+            lateral,
+            heading: typeof aimControl?.aimHeading === "number"
+              ? aimControl.aimHeading
+              : characterState.heading,
+            intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02,
+            damage: shot.damage ?? 0
+          };
+        }
       }
-    }
 
-    for (const vehicle of traffic) {
-      if (vehicle.wrecked) continue;
+      for (const vehicle of traffic) {
+        if (vehicle.wrecked) continue;
 
-      const pose = getVehiclePose(vehicle, world);
-      const dx = pose.x - origin2D.x;
-      const dz = pose.z - origin2D.z;
+        const pose = getVehiclePose(vehicle, world);
+        const dx = pose.x - origin2D.x;
+        const dz = pose.z - origin2D.z;
 
-      const forward = dx * forwardX + dz * forwardZ;
-      const lateral = dx * rightX + dz * rightZ;
-      const maxLateral = vehicle.collisionRadiusX + shot.hitRadius;
+        const forward = dx * forwardX + dz * forwardZ;
+        const lateral = dx * rightX + dz * rightZ;
+        const maxLateral = vehicle.collisionRadiusX + shot.hitRadius;
 
-      if (forward < 0 || forward > shot.range) continue;
-      if (Math.abs(lateral) > maxLateral) continue;
+        if (forward < 0 || forward > shot.range) continue;
+        if (Math.abs(lateral) > maxLateral) continue;
 
-      if (!bestHit || forward < bestHit.forward) {
-        bestHit = {
-          type: "vehicle",
-          vehicle,
-          pose,
-          forward,
-          lateral
-        };
+        if (!bestHit || forward < bestHit.forward) {
+          bestHit = {
+            type: "vehicle",
+            vehicle,
+            pose,
+            forward,
+            lateral
+          };
+        }
       }
+
+      const visibleDistance = bestHit
+        ? Math.min(bestHit.forward, shot.range)
+        : shot.range;
+
+      const tracerTarget = aimStart.clone().addScaledVector(
+        tracerForward3D,
+        Math.max(0.2, visibleDistance)
+      );
+
+      spawnShotTracer(start3D, tracerTarget, shot);
+
+      if (!bestHit) continue;
+
+      if (bestHit.type === "pedestrian") {
+        triggerShotOnPedestrian(bestHit);
+        continue;
+      }
+
+      triggerShotOnVehicle(
+        bestHit.vehicle,
+        shot,
+        bestHit.lateral,
+        bestHit.pose
+      );
     }
-
-    const visibleDistance = bestHit
-      ? Math.min(bestHit.forward, shot.range)
-      : shot.range;
-
-    const tracerTarget = aimStart.clone().addScaledVector(
-      tracerForward3D,
-      Math.max(0.2, visibleDistance)
-    );
-
-    spawnShotTracer(start3D, tracerTarget, shot);
-
-    if (!bestHit) return;
-
-    if (bestHit.type === "pedestrian") {
-      triggerShotOnPedestrian(bestHit);
-      return;
-    }
-
-    triggerShotOnVehicle(
-      bestHit.vehicle,
-      shot,
-      bestHit.lateral,
-      bestHit.pose
-    );
   }
 
   function getShotSpreadProfile(shot, characterState, aimControl = null) {
