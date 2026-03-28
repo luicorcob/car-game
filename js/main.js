@@ -101,6 +101,7 @@ const clock = new THREE.Clock();
 let fpsSmoothed = 0;
 let inventoryMenuOpen = false;
 let lastPlayerMode = "driving";
+let draggedInventorySlotIndex = null;
 
 const input = createInput();
 const world = createWorld(scene);
@@ -113,6 +114,102 @@ const playerCharacter = createPlayerCharacter();
 scene.add(playerCharacter);
 
 const game = createGame(scene, playerCar, playerCharacter, world);
+
+function clearInventoryDragState() {
+  draggedInventorySlotIndex = null;
+  hotbarEl.classList.remove("inventory-drag-enabled");
+  hotbarSlotEls.forEach((slotEl) => {
+    slotEl.classList.remove("dragging", "drag-over");
+  });
+  inventoryMenuGridEl.querySelectorAll(".inventory-slot").forEach((slotEl) => {
+    slotEl.classList.remove("dragging", "drag-over");
+  });
+}
+
+function getInventorySlotElement(target) {
+  return target instanceof Element ? target.closest("[data-slot-index]") : null;
+}
+
+function getInventorySlotIndex(target) {
+  const slotEl = getInventorySlotElement(target);
+  if (!slotEl) return null;
+  const rawIndex = Number(slotEl.dataset.slotIndex);
+  return Number.isInteger(rawIndex) ? rawIndex : null;
+}
+
+function handleInventoryDragStart(event) {
+  const slotIndex = getInventorySlotIndex(event.target);
+  if (slotIndex === null) {
+    event.preventDefault();
+    return;
+  }
+
+  const slotEl = getInventorySlotElement(event.target);
+  if (!slotEl || slotEl.dataset.empty === "true") {
+    event.preventDefault();
+    return;
+  }
+
+  draggedInventorySlotIndex = slotIndex;
+  hotbarEl.classList.add("inventory-drag-enabled");
+  slotEl.classList.add("dragging");
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(slotIndex));
+  }
+}
+
+function handleInventoryDragOver(event) {
+  if (draggedInventorySlotIndex === null) return;
+  const slotEl = getInventorySlotElement(event.target);
+  if (!slotEl) return;
+
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+  hotbarSlotEls.forEach((hotbarSlotEl) => hotbarSlotEl.classList.remove("drag-over"));
+  inventoryMenuGridEl.querySelectorAll(".inventory-slot").forEach((inventorySlotEl) => {
+    inventorySlotEl.classList.remove("drag-over");
+  });
+  slotEl.classList.add("drag-over");
+}
+
+function handleInventoryDragLeave(event) {
+  const slotEl = getInventorySlotElement(event.target);
+  if (!slotEl) return;
+  slotEl.classList.remove("drag-over");
+}
+
+function handleInventoryDrop(event) {
+  if (draggedInventorySlotIndex === null) return;
+  const targetIndex = getInventorySlotIndex(event.target);
+  if (targetIndex === null) return;
+
+  event.preventDefault();
+  game.moveInventorySlot(draggedInventorySlotIndex, targetIndex);
+  clearInventoryDragState();
+}
+
+function handleInventoryDragEnd() {
+  clearInventoryDragState();
+}
+
+hotbarSlotEls.forEach((slotEl, index) => {
+  slotEl.dataset.slotIndex = String(index);
+  slotEl.addEventListener("dragstart", handleInventoryDragStart);
+  slotEl.addEventListener("dragover", handleInventoryDragOver);
+  slotEl.addEventListener("dragleave", handleInventoryDragLeave);
+  slotEl.addEventListener("drop", handleInventoryDrop);
+  slotEl.addEventListener("dragend", handleInventoryDragEnd);
+});
+
+inventoryMenuGridEl.addEventListener("dragstart", handleInventoryDragStart);
+inventoryMenuGridEl.addEventListener("dragover", handleInventoryDragOver);
+inventoryMenuGridEl.addEventListener("dragleave", handleInventoryDragLeave);
+inventoryMenuGridEl.addEventListener("drop", handleInventoryDrop);
+inventoryMenuGridEl.addEventListener("dragend", handleInventoryDragEnd);
 
 const pizzeriaInfo = world.getPizzeriaInfo ? world.getPizzeriaInfo() : null;
 const weaponShopInfo = world.getWeaponShopInfo ? world.getWeaponShopInfo() : null;
@@ -528,6 +625,9 @@ function updateInventoryUI(state) {
     const labelEl = slotEl.querySelector(".hotbar-label");
     const detailEl = slotEl.querySelector(".hotbar-detail");
 
+    slotEl.dataset.slotIndex = String(index);
+    slotEl.dataset.empty = slot?.empty ? "true" : "false";
+    slotEl.draggable = !slot?.empty && inventoryMenuOpen;
     labelEl.textContent = slot?.empty ? "Vacio" : (slot?.label ?? "Vacio");
     detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
 
@@ -537,20 +637,23 @@ function updateInventoryUI(state) {
 
   inventoryMenuSummaryEl.textContent = summaryText;
 
-  const backpackSlots = slots.slice(5);
-  inventoryMenuGridEl.innerHTML = backpackSlots.map((slot) => {
-    const classes = [
-      "inventory-slot",
-      slot?.empty ? "empty" : "",
-      slot?.active ? "active" : ""
-    ].filter(Boolean).join(" ");
-    const slotNumber = (slot?.index ?? 0) + 1;
-    const keyMarkup = `<div class="inventory-slot-key">${slotNumber}</div>`;
-    return `<div class="${classes}">${keyMarkup}<strong>${slot?.empty ? "Vacio" : (slot?.label ?? "Vacio")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
-  }).join("");
+  if (draggedInventorySlotIndex === null) {
+    const backpackSlots = slots.slice(5);
+    inventoryMenuGridEl.innerHTML = backpackSlots.map((slot) => {
+      const classes = [
+        "inventory-slot",
+        slot?.empty ? "empty" : "",
+        slot?.active ? "active" : ""
+      ].filter(Boolean).join(" ");
+      const slotNumber = (slot?.index ?? 0) + 1;
+      const keyMarkup = `<div class="inventory-slot-key">${slotNumber}</div>`;
+      return `<div class="${classes}" data-slot-index="${slot?.index ?? -1}" data-empty="${slot?.empty ? "true" : "false"}" draggable="${slot?.empty ? "false" : "true"}">${keyMarkup}<strong>${slot?.empty ? "Vacio" : (slot?.label ?? "Vacio")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
+    }).join("");
+  }
 
   inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
   hotbarEl.classList.toggle("hidden", !walking);
+  hotbarEl.classList.toggle("inventory-drag-enabled", inventoryMenuOpen);
 }
 
 function updateMinimap(state) {
@@ -813,6 +916,9 @@ function animate() {
 
   if (input.toggleInventory && lastPlayerMode === "walking") {
     inventoryMenuOpen = !inventoryMenuOpen;
+    if (!inventoryMenuOpen) {
+      clearInventoryDragState();
+    }
   }
   input.toggleInventory = false;
 
@@ -845,6 +951,7 @@ function animate() {
 
   if (state.playerMode !== "walking" && inventoryMenuOpen) {
     inventoryMenuOpen = false;
+    clearInventoryDragState();
   }
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, dt);

@@ -237,6 +237,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let characterDestroyed = false;
   let activeRefuelStationId = null;
   let selectedHotbarSlot = 0;
+  let inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
 
   function clearShotTracers() {
     while (shotTracers.length) {
@@ -457,6 +458,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     failureLabel = "Chocado";
     characterDestroyed = false;
     selectedHotbarSlot = 0;
+    inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
 
     spawnTraffic();
   }
@@ -520,42 +522,88 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return entries;
   }
 
+  function createInventorySlotFromEntry(entry) {
+    if (!entry) return null;
+
+    if (entry.kind === "weapon") {
+      return {
+        id: entry.id,
+        kind: "weapon",
+        label: entry.label,
+        detail: entry.detail,
+        weaponId: entry.weaponId
+      };
+    }
+
+    if (entry.kind === "pizza") {
+      return {
+        id: entry.id,
+        kind: "pizza",
+        label: entry.label,
+        detail: entry.detail
+      };
+    }
+
+    if (entry.kind === "fuel") {
+      return {
+        id: entry.id,
+        kind: "fuel",
+        label: entry.label,
+        detail: entry.detail
+      };
+    }
+
+    return null;
+  }
+
+  function syncInventorySlotItemIds(entries) {
+    const entryIds = new Set(entries.map((entry) => entry.id));
+
+    inventorySlotItemIds = inventorySlotItemIds.map((itemId) =>
+      entryIds.has(itemId) ? itemId : null
+    );
+
+    for (const entry of entries) {
+      if (inventorySlotItemIds.includes(entry.id)) continue;
+      const emptyIndex = inventorySlotItemIds.indexOf(null);
+      if (emptyIndex === -1) break;
+      inventorySlotItemIds[emptyIndex] = entry.id;
+    }
+  }
+
   function buildInventorySlots() {
     const entries = buildInventoryEntries();
+    syncInventorySlotItemIds(entries);
+    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
     return Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => {
-      const entry = entries[index];
-      if (!entry) return null;
-
-      if (entry.kind === "weapon") {
-        return {
-          id: entry.id,
-          kind: "weapon",
-          label: entry.label,
-          detail: entry.detail,
-          weaponId: entry.weaponId
-        };
-      }
-
-      if (entry.kind === "pizza") {
-        return {
-          id: entry.id,
-          kind: "pizza",
-          label: entry.label,
-          detail: entry.detail
-        };
-      }
-
-      if (entry.kind === "fuel") {
-        return {
-          id: entry.id,
-          kind: "fuel",
-          label: entry.label,
-          detail: entry.detail
-        };
-      }
-
-      return null;
+      const itemId = inventorySlotItemIds[index];
+      const entry = itemId ? entryById.get(itemId) ?? null : null;
+      return createInventorySlotFromEntry(entry);
     });
+  }
+
+  function moveInventorySlot(fromIndex, toIndex) {
+    if (
+      !Number.isInteger(fromIndex) ||
+      !Number.isInteger(toIndex) ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= INVENTORY_SLOT_COUNT ||
+      toIndex >= INVENTORY_SLOT_COUNT ||
+      fromIndex === toIndex
+    ) {
+      return false;
+    }
+
+    const fromItemId = inventorySlotItemIds[fromIndex];
+    if (!fromItemId) return false;
+
+    const toItemId = inventorySlotItemIds[toIndex];
+    inventorySlotItemIds[fromIndex] = toItemId ?? null;
+    inventorySlotItemIds[toIndex] = fromItemId;
+    syncSelectedHotbarSlot();
+    return true;
   }
 
   function buildHotbarSlots() {
@@ -1727,6 +1775,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
   return {
     reset,
-    update
+    update,
+    moveInventorySlot
   };
 }

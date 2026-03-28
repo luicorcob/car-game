@@ -308,6 +308,10 @@ body {
   pointer-events: none;
 }
 
+.hotbar.inventory-drag-enabled {
+  pointer-events: auto;
+}
+
 .hotbar-slot {
   min-height: 74px;
   padding: 10px 12px;
@@ -330,6 +334,25 @@ body {
 
 .hotbar-slot.empty {
   opacity: 0.6;
+}
+
+.hotbar-slot[draggable="true"],
+.inventory-slot[draggable="true"] {
+  cursor: grab;
+}
+
+.hotbar-slot.dragging,
+.inventory-slot.dragging {
+  opacity: 0.42;
+  transform: scale(0.98);
+}
+
+.hotbar-slot.drag-over,
+.inventory-slot.drag-over {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.45),
+    0 0 20px rgba(56, 189, 248, 0.18);
 }
 
 .hotbar-key {
