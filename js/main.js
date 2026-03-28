@@ -500,6 +500,7 @@ function updateMinimap(state) {
   }
 
   const showCar = state.playerMode === "walking";
+  navCarEl.classList.toggle("player-owned-car", showCar);
   setMarker(
     navCarEl,
     state.vehiclePose.x,

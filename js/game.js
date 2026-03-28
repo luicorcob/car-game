@@ -199,6 +199,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     segmentS: 0,
     laneOffset: 0,
     laneVelocity: 0,
+    handbrakeAmount: 0,
     steer: 0,
     speed: 0,
     requestedTurn: 0,
@@ -407,6 +408,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.segmentS = 0;
     player.laneOffset = 0;
     player.laneVelocity = 0;
+    player.handbrakeAmount = 0;
     player.steer = 0;
     player.speed = 0;
     player.requestedTurn = 0;
@@ -550,6 +552,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
     player.speed = 0;
     player.laneVelocity = 0;
+    player.handbrakeAmount = 0;
     player.steer = 0;
     player.isRefueling = false;
     activeRefuelStationId = null;
@@ -606,12 +609,41 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const accelStep = CONFIG.player.acceleration * dt * 60;
     const brakeStep = CONFIG.player.braking * dt * 60;
     const handbrakeStep = (CONFIG.player.handbrakeBraking ?? (CONFIG.player.braking * 1.8)) * dt * 60;
-    const coastFactor = Math.max(0, 1 - CONFIG.player.coastDrag * dt * 60);
+    const preStepSpeedRatio = clamp(
+      Math.abs(player.speed) / CONFIG.player.maxSpeed,
+      0,
+      1
+    );
+    const steerAmount = Math.abs(player.steer);
+    const driftSpeedRatio = clamp(
+      (Math.abs(player.speed) - (CONFIG.player.handbrakeDriftMinSpeed ?? 0.18)) /
+        Math.max(0.001, CONFIG.player.maxSpeed - (CONFIG.player.handbrakeDriftMinSpeed ?? 0.18)),
+      0,
+      1
+    );
+    const handbrakeDriftRatio =
+      usingHandbrake
+        ? driftSpeedRatio * clamp((steerAmount - 0.12) / 0.88, 0, 1)
+        : 0;
+    const coastScale = 0.2 + preStepSpeedRatio * 0.45;
+    const coastFactor = Math.max(
+      0,
+      1 - CONFIG.player.coastDrag * coastScale * dt * 60
+    );
     const dragFactor = Math.max(0, 1 - CONFIG.player.drag * dt * 60);
+    const handbrakeGrip =
+      CONFIG.player.handbrakeDriftGrip ??
+      0.3;
     const handbrakeDragFactor = Math.max(
       0,
-      1 - (CONFIG.player.handbrakeDrag ?? (CONFIG.player.drag * 3)) * dt * 60
+      1 -
+        (CONFIG.player.handbrakeDrag ?? (CONFIG.player.drag * 3)) *
+          (1 - handbrakeDriftRatio * (1 - handbrakeGrip)) *
+          dt *
+          60
     );
+    player.handbrakeAmount +=
+      ((usingHandbrake ? 1 : 0) - player.handbrakeAmount) * Math.min(1, 8 * dt);
 
     if (!outOfFuel && input.accelerate) {
       if (player.speed < 0) {
@@ -620,10 +652,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         player.speed += accelStep;
       }
     } else if (usingHandbrake) {
+      const handbrakeBrakeScale = 1 - handbrakeDriftRatio * 0.9;
+      const handbrakeSlowdown = handbrakeStep * handbrakeBrakeScale;
       if (player.speed > 0.01) {
-        player.speed = Math.max(0, player.speed - handbrakeStep);
+        player.speed = Math.max(0, player.speed - handbrakeSlowdown);
       } else if (player.speed < -0.01) {
-        player.speed = Math.min(0, player.speed + handbrakeStep);
+        player.speed = Math.min(0, player.speed + handbrakeSlowdown);
       } else {
         player.speed = 0;
       }
@@ -643,13 +677,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       player.speed *= dragFactor;
     }
 
+    const speedRatio = clamp(Math.abs(player.speed) / CONFIG.player.maxSpeed, 0, 1);
     player.speed = clamp(
       player.speed,
       -CONFIG.player.reverseMaxSpeed,
       CONFIG.player.maxSpeed
     );
-
-    const speedRatio = clamp(Math.abs(player.speed) / CONFIG.player.maxSpeed, 0, 1);
     const steerAuthority =
       CONFIG.player.steerAtLowSpeed +
       (CONFIG.player.steerAtHighSpeed - CONFIG.player.steerAtLowSpeed) * speedRatio;
@@ -669,9 +702,18 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.pose.heading = world.normalizeAngle(
       player.pose.heading + yawStep * dt * 60
     );
+    const laneTarget =
+      player.steer *
+      Math.abs(player.speed) *
+      (1 + handbrakeDriftRatio * (CONFIG.player.driftSlipBoost ?? 1.4));
     player.laneVelocity +=
-      ((player.steer * Math.abs(player.speed)) - player.laneVelocity) *
-      Math.min(1, 6 * dt);
+      (laneTarget - player.laneVelocity) *
+      Math.min(
+        1,
+        (usingHandbrake
+          ? (CONFIG.player.driftSlipResponse ?? 4.1)
+          : 6) * dt
+      );
   }
 
   function updateDrivingPlayer(dt) {
@@ -699,17 +741,45 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       player.speed *= CONFIG.player.collisionDamping;
     }
 
-    playerCar.position.set(player.pose.x, 0, player.pose.z);
+    const speedAbs = Math.abs(player.speed);
+    const driftLiftRatio =
+      player.handbrakeAmount *
+      clamp(
+        (speedAbs - (CONFIG.player.driftVisualSpeedThreshold ?? (80 / 150))) /
+          Math.max(
+            0.001,
+            CONFIG.player.maxSpeed - (CONFIG.player.driftVisualSpeedThreshold ?? (80 / 150))
+          ),
+        0,
+        1
+      ) *
+      clamp(Math.abs(player.steer), 0, 1);
+    const driftSlipRatio = clamp(
+      Math.abs(player.laneVelocity) / Math.max(0.001, CONFIG.player.maxSpeed * 0.7),
+      0,
+      1
+    );
+    const driftVisualRatio = driftLiftRatio * (0.45 + driftSlipRatio * 0.55);
+    const driftDirection =
+      Math.abs(player.steer) > 0.02
+        ? Math.sign(player.steer)
+        : Math.sign(player.laneVelocity || 0);
+    const driftLift = (CONFIG.player.driftVisualLift ?? 0.14) * driftVisualRatio;
+
+    playerCar.position.set(player.pose.x, driftLift, player.pose.z);
 
     const baseYaw = Math.PI - player.pose.heading;
     const speedRatio = clamp(player.speed / CONFIG.player.maxSpeed, 0, 1);
     const visualYaw =
-      -player.steer * CONFIG.player.steerVisualYaw * (0.35 + Math.abs(speedRatio) * 0.65);
+      -player.steer * CONFIG.player.steerVisualYaw * (0.35 + Math.abs(speedRatio) * 0.65) +
+      driftDirection * (CONFIG.player.driftVisualYaw ?? 0.08) * driftVisualRatio;
 
     let visualRoll =
-      -player.steer * CONFIG.player.bodyRoll * (0.25 + Math.abs(speedRatio) * 0.75);
+      -player.steer * CONFIG.player.bodyRoll * (0.25 + Math.abs(speedRatio) * 0.75) -
+      driftDirection * (CONFIG.player.driftVisualRoll ?? 0.055) * driftVisualRatio;
+    const visualPitch = -(CONFIG.player.driftVisualPitch ?? 0.03) * driftVisualRatio;
 
-    targetEuler.set(0, baseYaw + visualYaw, visualRoll);
+    targetEuler.set(visualPitch, baseYaw + visualYaw, visualRoll);
     targetQuat.setFromEuler(targetEuler);
     playerCar.quaternion.slerp(targetQuat, 0.18);
 
