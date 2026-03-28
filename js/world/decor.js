@@ -16,6 +16,23 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   const movingPedestrians = [];
   const staticPedestrians = [];
   const parkedCars = [];
+  const viewForward = new THREE.Vector3();
+  const viewForwardXZ = new THREE.Vector2();
+  const cachedView = {
+    x: 0,
+    z: 0,
+    fx: 0,
+    fz: 0,
+    minDot: 0
+  };
+  const lastStaticCullView = {
+    valid: false,
+    x: 0,
+    z: 0,
+    fx: 0,
+    fz: 0
+  };
+  let staticCullAccumulator = Infinity;
 
   function isReserved(x, z, padding = 0) {
     if (!hooks.isReservedArea) return false;
@@ -433,25 +450,24 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     const camera = context?.camera;
     if (!camera) return null;
 
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
+    camera.getWorldDirection(viewForward);
 
-    const forwardXZ = new THREE.Vector2(forward.x, forward.z);
-    if (forwardXZ.lengthSq() < 0.0001) return null;
+    viewForwardXZ.set(viewForward.x, viewForward.z);
+    if (viewForwardXZ.lengthSq() < 0.0001) return null;
 
-    forwardXZ.normalize();
+    viewForwardXZ.normalize();
 
     const halfFov =
       THREE.MathUtils.degToRad(camera.fov * 0.5) +
       (CONFIG.world.cullFovPaddingRad ?? 0.6);
 
-    return {
-      x: camera.position.x,
-      z: camera.position.z,
-      fx: forwardXZ.x,
-      fz: forwardXZ.y,
-      minDot: Math.cos(halfFov)
-    };
+    cachedView.x = camera.position.x;
+    cachedView.z = camera.position.z;
+    cachedView.fx = viewForwardXZ.x;
+    cachedView.fz = viewForwardXZ.y;
+    cachedView.minDot = Math.cos(halfFov);
+
+    return cachedView;
   }
 
   function isVisibleByView(position, maxDistance, view) {
@@ -468,6 +484,62 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     return dot >= view.minDot;
   }
 
+  function shouldRefreshStaticVisibility(view, dt) {
+    staticCullAccumulator += dt;
+
+    if (!view) {
+      lastStaticCullView.valid = false;
+      staticCullAccumulator = 0;
+      return true;
+    }
+
+    if (!lastStaticCullView.valid) {
+      staticCullAccumulator = 0;
+      return true;
+    }
+
+    const dx = view.x - lastStaticCullView.x;
+    const dz = view.z - lastStaticCullView.z;
+    const movedSq = dx * dx + dz * dz;
+    const forwardDot =
+      view.fx * lastStaticCullView.fx + view.fz * lastStaticCullView.fz;
+
+    if (movedSq >= 3.5 * 3.5 || forwardDot <= 0.996 || staticCullAccumulator >= 0.08) {
+      staticCullAccumulator = 0;
+      return true;
+    }
+
+    return false;
+  }
+
+  function rememberStaticCullView(view) {
+    if (!view) {
+      lastStaticCullView.valid = false;
+      return;
+    }
+
+    lastStaticCullView.valid = true;
+    lastStaticCullView.x = view.x;
+    lastStaticCullView.z = view.z;
+    lastStaticCullView.fx = view.fx;
+    lastStaticCullView.fz = view.fz;
+  }
+
+  function refreshStaticVisibility(view, maxBuildingDistance, maxParkedDistance, maxPedDistance) {
+    for (const building of buildings) {
+      building.visible = !view || isVisibleByView(building.position, maxBuildingDistance, view);
+    }
+
+    for (const car of parkedCars) {
+      car.visible = !view || isVisibleByView(car.position, maxParkedDistance, view);
+    }
+
+    for (const ped of staticPedestrians) {
+      if (!ped.alive) continue;
+      ped.group.visible = !view || isVisibleByView(ped.group.position, maxPedDistance, view);
+    }
+  }
+
   function updateDecorations(dt, context = null) {
     const playerPose = context?.playerPose ?? null;
     const view = buildViewContext(context);
@@ -475,21 +547,9 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     const maxBuildingDistance = CONFIG.world.cullDistanceBuildings ?? 520;
     const maxParkedDistance = CONFIG.world.cullDistanceParkedCars ?? 320;
     const maxPedDistance = CONFIG.world.cullDistancePedestrians ?? 240;
-
-    for (const building of buildings) {
-      if (!view) {
-        building.visible = true;
-        continue;
-      }
-      building.visible = isVisibleByView(building.position, maxBuildingDistance, view);
-    }
-
-    for (const car of parkedCars) {
-      if (!view) {
-        car.visible = true;
-        continue;
-      }
-      car.visible = isVisibleByView(car.position, maxParkedDistance, view);
+    if (shouldRefreshStaticVisibility(view, dt)) {
+      refreshStaticVisibility(view, maxBuildingDistance, maxParkedDistance, maxPedDistance);
+      rememberStaticCullView(view);
     }
 
     const nearDist = CONFIG.world.pedestrianNearUpdateDistance ?? 90;
@@ -551,15 +611,6 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       ped.legLeft.rotation.x = -walk * 0.5;
       ped.legRight.rotation.x = walk * 0.5;
       ped.group.position.y = Math.abs(walk) * 0.015;
-    }
-
-    for (const ped of staticPedestrians) {
-      if (!ped.alive) continue;
-      if (!view) {
-        ped.group.visible = true;
-        continue;
-      }
-      ped.group.visible = isVisibleByView(ped.group.position, maxPedDistance, view);
     }
   }
 

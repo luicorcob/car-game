@@ -458,20 +458,20 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return best;
   }
 
-  function tryEnterGasStation(input) {
+  function tryEnterGasStation(input, access = null) {
     const interactPressed = isInteractPressed(input);
     const justPressed = interactPressed && !prevInteract;
     if (!justPressed || playerMode !== "driving" || gameOver) return null;
 
-    const access = getGasStationAccess();
-    if (!access) return null;
+    const currentAccess = access ?? getGasStationAccess();
+    if (!currentAccess) return null;
     if (Math.abs(player.speed) > 0.035) return null;
     if (player.fuel >= CONFIG.fuel.max - 0.001) return null;
 
-    activeRefuelStationId = access.stationId;
+    activeRefuelStationId = currentAccess.stationId;
     player.isRefueling = true;
     player.speed = 0;
-    return access;
+    return currentAccess;
   }
 
   function canExitVehicle() {
@@ -535,14 +535,14 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return candidates;
   }
 
-  function tryExitVehicle(input) {
+  function tryExitVehicle(input, gasAccess = null) {
     const interactPressed = isInteractPressed(input);
     const justPressed = interactPressed && !prevInteract;
 
     if (!justPressed || !canExitVehicle()) return false;
 
-    const gasAccess = getGasStationAccess();
-    if (gasAccess) return false;
+    const currentGasAccess = gasAccess ?? getGasStationAccess();
+    if (currentGasAccess) return false;
 
     const candidates = buildExitCandidates();
     const best = candidates[0];
@@ -712,8 +712,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.fuel = Math.max(0, player.fuel - consumption);
   }
 
-  function updateRefuelState(dt) {
-    const access = getGasStationAccess();
+  function updateRefuelState(dt, gasAccess = null) {
+    const access = gasAccess ?? getGasStationAccess();
     const sameStationNearby =
       !!access &&
       !!activeRefuelStationId &&
@@ -895,9 +895,14 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
   function checkDrivingCollisions() {
     const playerOrigin = { x: player.pose.x, z: player.pose.z };
+    const maxCollisionRadius = CONFIG.player.collisionRadiusZ + 5.2;
+    const maxCollisionDistSq = maxCollisionRadius * maxCollisionRadius;
 
     for (const car of traffic) {
       if (car.wrecked) continue;
+      const dx = car.mesh.position.x - playerOrigin.x;
+      const dz = car.mesh.position.z - playerOrigin.z;
+      if (dx * dx + dz * dz > maxCollisionDistSq) continue;
 
       const local = localizePoint(
         { x: car.mesh.position.x, z: car.mesh.position.z },
@@ -925,10 +930,16 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function checkPedestrianTrafficCollisions(characterState) {
+    const maxCollisionRadius = CONFIG.onFoot.hitboxRadius + 5.2;
+    const maxCollisionDistSq = maxCollisionRadius * maxCollisionRadius;
+
     for (const car of traffic) {
       if (car.wrecked) continue;
 
       const pose = getVehiclePose(car, world);
+      const dx = pose.x - characterState.x;
+      const dz = pose.z - characterState.z;
+      if (dx * dx + dz * dz > maxCollisionDistSq) continue;
 
       const local = localizePoint(
         { x: characterState.x, z: characterState.z },
@@ -1142,18 +1153,19 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         );
         updateDrivingInput(input, dt, turnSensitivity);
 
-        const enteredStation = tryEnterGasStation(input);
+        gasAccess = getGasStationAccess();
+
+        const enteredStation = tryEnterGasStation(input, gasAccess);
         if (!enteredStation) {
-          tryExitVehicle(input);
+          tryExitVehicle(input, gasAccess);
         }
 
         if (playerMode === "driving") {
           moveDistance = updateDrivingPlayer(dt);
           gasAccess = getGasStationAccess();
           updateFuel(dt, input, moveDistance);
-          updateRefuelState(dt);
+          updateRefuelState(dt, gasAccess);
           upcomingIntersection = null;
-          gasAccess = getGasStationAccess();
         }
       } else {
         const characterStateNow = character.update(

@@ -422,6 +422,7 @@ export function createGasStationController(scene, graph) {
   const stations = [];
   const stationMap = new Map();
   const reservedAreas = [];
+  const stationInfos = [];
 
   function registerReservedArea(x, z, radius) {
     reservedAreas.push({ x, z, radius });
@@ -704,6 +705,12 @@ export function createGasStationController(scene, graph) {
 
       stations.push(station);
       stationMap.set(station.id, station);
+      stationInfos.push({
+        id: station.id,
+        brand: station.brand,
+        center: station.apronCenter,
+        pumpPositions: station.pumpPositions
+      });
 
       const visual = createGasStationVisual(station);
       station.visual = visual;
@@ -850,14 +857,7 @@ export function createGasStationController(scene, graph) {
   }
 
   function getInfos() {
-    return stations
-      .filter((station) => station.visual?.parent)
-      .map((station) => ({
-        id: station.id,
-        brand: station.brand,
-        center: { ...station.apronCenter },
-        pumpPositions: station.pumpPositions.map((pump) => ({ ...pump }))
-      }));
+    return stationInfos;
   }
 
   return {
