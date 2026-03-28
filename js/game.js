@@ -335,7 +335,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const material = new THREE.MeshBasicMaterial({
       color: shot.visualTracerColor ?? 0xfff1b8,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.42,
       depthWrite: false
     });
 
@@ -371,7 +371,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       }
 
       const alpha = tracer.life / tracer.maxLife;
-      tracer.mesh.material.opacity = alpha * 0.95;
+      tracer.mesh.material.opacity = alpha * 0.42;
     }
   }
 
@@ -1763,7 +1763,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const isLockedFocus =
       focusBlend > 0.9 &&
       planarSpeed < CONFIG.onFoot.walkSpeed * 0.14;
-    const bloomMultiplier = 1 + shotBloom * bloomRadius;
+    const bloomMultiplier = 1 + shotBloom * bloomRadius * 0.45;
 
     const maxRadius = isLockedFocus
       ? 0

@@ -61,10 +61,10 @@ function createMuzzleFlash(size = 0.16) {
     new THREE.MeshStandardMaterial({
       color: 0xffd166,
       emissive: 0xffb703,
-      emissiveIntensity: 2.4,
+      emissiveIntensity: 1.2,
       roughness: 0.22,
       transparent: true,
-      opacity: 0.95
+      opacity: 0.48
     })
   );
   flash.userData.weaponFlash = true;
@@ -890,14 +890,14 @@ export function updatePlayerCharacterVisual(character, dt, state) {
         active.group.position.z -= recoil * 0.035 + diagonalUpBlend * 0.015;
         active.group.visible = true;
         active.flash.visible = muzzlePulse > 0.08;
-        active.flash.scale.setScalar(1 + muzzlePulse * 1.16);
+        active.flash.scale.setScalar(0.88 + muzzlePulse * 0.64);
       }
     } else {
       const active = rig.firstPersonWeapons[weaponState.equippedId];
       if (active) {
         active.group.visible = true;
         active.flash.visible = muzzlePulse > 0.08;
-        active.flash.scale.setScalar(1 + muzzlePulse * 1.5);
+        active.flash.scale.setScalar(0.84 + muzzlePulse * 0.62);
         const hideScopedSniper = weaponState.equippedId === "francotirador" && rig.aimBlend > 0.08;
         active.group.traverse((node) => {
           if (!node.isMesh || node.userData.weaponFlash) return;
