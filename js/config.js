@@ -61,6 +61,18 @@ export const CONFIG = {
     hitboxRadius: 0.62
   },
 
+  health: {
+    playerMax: 100,
+    playerTrafficMinDamage: 12,
+    playerTrafficMaxDamage: 90,
+    playerTrafficSpeedRef: 0.24,
+    playerRegenDelay: 3,
+    playerRegenPerSecond: 16,
+    playerCriticalStart: 0.7,
+    pedestrianMax: 100,
+    pedestrianBarDistance: 58
+  },
+
   camera: {
     height: 6.2,
     followDistance: 14,

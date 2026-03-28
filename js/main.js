@@ -52,6 +52,14 @@ const missionObjectiveEl = document.querySelector("#mission-objective");
 const missionMetaEl = document.querySelector("#mission-meta");
 const missionCountEl = document.querySelector("#mission-count");
 
+const healthCardEl = document.querySelector("#health-card");
+const healthPercentEl = document.querySelector("#health-percent");
+const healthValueEl = document.querySelector("#health-value");
+const healthStateEl = document.querySelector("#health-state");
+const healthBarFillEl = document.querySelector("#health-bar-fill");
+const pedHealthLayerEl = document.querySelector("#ped-health-layer");
+const damageOverlayEl = document.querySelector("#damage-overlay");
+
 const weaponCardEl = document.querySelector("#weapon-card");
 const weaponNameEl = document.querySelector("#weapon-name");
 const weaponAmmoEl = document.querySelector("#weapon-ammo");
@@ -112,6 +120,8 @@ let latestGameState = null;
 const SNIPER_SCOPE_ZOOM_STEPS = [1, 0.78, 0.58, 0.42];
 let sniperScopeZoomIndex = 0;
 let sniperScopeForcedFirstPerson = false;
+const pedestrianHealthBarEls = new Map();
+const projectedPedPosition = new THREE.Vector3();
 
 function isSniperScopeActive(state) {
   const weaponId = state.weaponHud?.equippedId ?? null;
@@ -656,6 +666,95 @@ function updateFuelUI(state) {
   fuelBarFillEl.style.width = `${Math.max(0, Math.min(100, state.fuelPct))}%`;
 }
 
+function updateHealthUI(state) {
+  const health = state.healthHud;
+  const healthPct = Math.max(0, Math.min(100, health?.pct ?? 100));
+
+  healthPercentEl.textContent = `${healthPct}%`;
+  healthValueEl.textContent = `${health?.current ?? 100} / ${health?.max ?? 100}`;
+  healthBarFillEl.style.width = `${healthPct}%`;
+
+  healthCardEl.classList.remove("normal", "mid", "critical");
+
+  if (healthPct <= 30) {
+    healthCardEl.classList.add("critical");
+    healthStateEl.textContent = "Critica";
+  } else if (healthPct <= 65) {
+    healthCardEl.classList.add("mid");
+    healthStateEl.textContent = "Herido";
+  } else {
+    healthCardEl.classList.add("normal");
+    healthStateEl.textContent = "Completa";
+  }
+
+  healthCardEl.classList.remove("hidden");
+}
+
+function getPedestrianHealthBarEl(id) {
+  let el = pedestrianHealthBarEls.get(id);
+  if (el) return el;
+
+  el = document.createElement("div");
+  el.className = "ped-health-bar";
+  el.innerHTML = '<div class="ped-health-fill"></div>';
+  pedHealthLayerEl.appendChild(el);
+  pedestrianHealthBarEls.set(id, el);
+  return el;
+}
+
+function updatePedestrianHealthBars(state) {
+  const targets = state.pedestrianHealthHud ?? [];
+  const activeIds = new Set();
+
+  for (const target of targets) {
+    projectedPedPosition.set(target.x, target.y ?? 2.05, target.z).project(camera);
+    const visible =
+      projectedPedPosition.z > -1 &&
+      projectedPedPosition.z < 1 &&
+      projectedPedPosition.x >= -1.1 &&
+      projectedPedPosition.x <= 1.1 &&
+      projectedPedPosition.y >= -1.1 &&
+      projectedPedPosition.y <= 1.1;
+
+    if (!visible) continue;
+
+    activeIds.add(target.id);
+    const el = getPedestrianHealthBarEl(target.id);
+    const fillEl = el.firstElementChild;
+    const screenX = (projectedPedPosition.x * 0.5 + 0.5) * window.innerWidth;
+    const screenY = (-projectedPedPosition.y * 0.5 + 0.5) * window.innerHeight;
+    const pct = Math.max(0, Math.min(100, target.pct ?? 100));
+
+    el.classList.remove("hidden");
+    el.style.left = `${screenX.toFixed(1)}px`;
+    el.style.top = `${(screenY - 18).toFixed(1)}px`;
+    if (fillEl) {
+      fillEl.style.transform = `scaleX(${(pct / 100).toFixed(3)})`;
+    }
+  }
+
+  for (const [id, el] of pedestrianHealthBarEls) {
+    el.classList.toggle("hidden", !activeIds.has(id));
+  }
+}
+
+function updateDamageOverlay(state) {
+  const health = state.healthHud;
+  const pct = Math.max(0, Math.min(100, health?.pct ?? 100));
+  const criticalStart = Math.max(1, Math.min(100, health?.criticalStartPct ?? 70));
+
+  if (pct >= criticalStart) {
+    damageOverlayEl.classList.add("hidden");
+    damageOverlayEl.style.opacity = "0";
+    return;
+  }
+
+  const intensity = 1 - pct / criticalStart;
+  damageOverlayEl.classList.remove("hidden");
+  const boostedIntensity = Math.pow(intensity, 1.75);
+  damageOverlayEl.style.opacity = `${THREE.MathUtils.lerp(0.03, 0.92, boostedIntensity).toFixed(3)}`;
+}
+
 function updateMissionUI(state) {
   const mission = state.missionState;
 
@@ -958,6 +1057,9 @@ function updateUI(state) {
   }
 
   updateFuelUI(state);
+  updateHealthUI(state);
+  updatePedestrianHealthBars(state);
+  updateDamageOverlay(state);
   updateMissionUI(state);
   updateWeaponUI(state);
   updateInventoryUI(state);
@@ -985,6 +1087,7 @@ function restartGame() {
       toggleFirstPerson: false,
       jump: false,
       sprint: false,
+      debugDamage: false,
       crouch: false,
       fire: false,
       aim: false,

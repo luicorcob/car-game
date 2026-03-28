@@ -247,7 +247,61 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let selectedHotbarSlot = 0;
   let inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
   let shotBloom = 0;
+  let playerHealth = CONFIG.health.playerMax;
+  let playerHealthRegenTimer = 0;
+  const pedestrianHealth = new Map();
   const MAX_SHOT_BLOOM = 1.6;
+
+  function getPlayerHealthRatio() {
+    return clamp(playerHealth / CONFIG.health.playerMax, 0, 1);
+  }
+
+  function getPedestrianHealth(id) {
+    if (!pedestrianHealth.has(id)) {
+      pedestrianHealth.set(id, CONFIG.health.pedestrianMax);
+    }
+
+    return pedestrianHealth.get(id);
+  }
+
+  function damagePedestrian(id, amount) {
+    const nextHealth = Math.max(0, getPedestrianHealth(id) - amount);
+    pedestrianHealth.set(id, nextHealth);
+    return nextHealth;
+  }
+
+  function damagePlayer(amount) {
+    playerHealthRegenTimer = 0;
+    playerHealth = clamp(playerHealth - amount, 0, CONFIG.health.playerMax);
+    return playerHealth;
+  }
+
+  function updatePlayerHealthRegen(dt) {
+    if (gameOver || playerHealth >= CONFIG.health.playerMax) return;
+
+    playerHealthRegenTimer += dt;
+    if (playerHealthRegenTimer < (CONFIG.health.playerRegenDelay ?? 3)) return;
+
+    playerHealth = clamp(
+      playerHealth + (CONFIG.health.playerRegenPerSecond ?? 16) * dt,
+      0,
+      CONFIG.health.playerMax
+    );
+  }
+
+  function getTrafficHitDamage(speed) {
+    const referenceSpeed = Math.max(
+      0.001,
+      CONFIG.health.playerTrafficSpeedRef ??
+        Math.max(CONFIG.traffic.maxSpeed, CONFIG.traffic.truckMaxSpeed)
+    );
+    const speedRatio = clamp(Math.abs(speed) / referenceSpeed, 0, 1);
+    return THREE.MathUtils.lerp(
+      CONFIG.health.playerTrafficMinDamage ?? 12,
+      CONFIG.health.playerTrafficMaxDamage ?? 90,
+      Math.pow(speedRatio, 1.15)
+    );
+  }
 
   function clearShotTracers() {
     while (shotTracers.length) {
@@ -476,6 +530,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     inventorySlotItemIds[2] = "fusil";
     inventorySlotItemIds[3] = "francotirador";
     shotBloom = 0;
+    playerHealth = CONFIG.health.playerMax;
+    playerHealthRegenTimer = 0;
+    pedestrianHealth.clear();
 
     spawnTraffic();
   }
@@ -1231,10 +1288,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   function triggerPedestrianImpact(hitVehicle, hitPose, characterState) {
     if (gameOver) return;
 
-    gameOver = true;
-    failureLabel = "Atropellado";
-    characterDestroyed = true;
-    playerCharacter.visible = false;
+    const impactDamage = getTrafficHitDamage(hitVehicle.speed);
+    const remainingHealth = damagePlayer(impactDamage);
 
     hitVehicle.speed = 0;
     hitVehicle.wrecked = true;
@@ -1262,6 +1317,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       hitPose.heading,
       Math.max(0.95, hitVehicle.speed * 5.4)
     );
+
+    if (remainingHealth > 0) return;
+
+    gameOver = true;
+    failureLabel = "Atropellado";
+    characterDestroyed = true;
+    playerCharacter.visible = false;
   }
 
   function checkDrivingCollisions() {
@@ -1354,8 +1416,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function triggerShotOnPedestrian(hit) {
+    const remainingHealth = damagePedestrian(hit.id, hit.damage ?? 0);
+    if (remainingHealth > 0) return;
+
     const removed = world.destroyPedestrian(hit.id);
     if (!removed) return;
+
+    pedestrianHealth.delete(hit.id);
 
     destruction.triggerPedestrianHit(
       removed,
@@ -1557,7 +1624,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           heading: typeof aimControl?.aimHeading === "number"
             ? aimControl.aimHeading
             : characterState.heading,
-          intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02
+          intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02,
+          damage: shot.damage ?? 0
         };
       }
     }
@@ -1804,6 +1872,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           checkPedestrianTrafficCollisions(character.getState());
         }
       }
+
+      updatePlayerHealthRegen(dt);
+
+      if (input.debugDamage) {
+        damagePlayer(18);
+      }
     } else {
       weapons.update(dt, input, {
         playerMode,
@@ -1822,8 +1896,30 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       characterState,
       controlContext
     );
+    const activePose =
+      playerMode === "walking"
+        ? {
+            x: characterState.x,
+            z: characterState.z,
+            heading: characterState.heading
+          }
+        : player.pose;
     const missionState = pizzaDelivery.getState();
     const fuelRatio = player.fuel / CONFIG.fuel.max;
+    const healthRatio = getPlayerHealthRatio();
+    const pedestrianBarTargets = world.getPedestrianTargets()
+      .filter((ped) => {
+        const dx = ped.x - activePose.x;
+        const dz = ped.z - activePose.z;
+        return dx * dx + dz * dz <= Math.pow(CONFIG.health.pedestrianBarDistance ?? 58, 2);
+      })
+      .map((ped) => ({
+        id: ped.id,
+        x: ped.x,
+        y: ped.y ?? 2.05,
+        z: ped.z,
+        pct: Math.round((getPedestrianHealth(ped.id) / CONFIG.health.pedestrianMax) * 100)
+      }));
     const inGasStation = !!gasAccess || player.isRefueling;
     const vehicleSurface =
       playerMode === "driving"
@@ -1873,15 +1969,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     }
 
     prevInteract = isInteractPressed(input);
-
-    const activePose =
-      playerMode === "walking"
-        ? {
-            x: characterState.x,
-            z: characterState.z,
-            heading: characterState.heading
-          }
-        : player.pose;
 
     const walkingSpeedKmh = Math.round(characterState.planarSpeed * 70);
 
@@ -1940,6 +2027,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       lowFuel: fuelRatio <= CONFIG.fuel.lowThreshold,
       criticalFuel: fuelRatio <= CONFIG.fuel.criticalThreshold,
       outOfFuel: player.fuel <= 0.001,
+      healthHud: {
+        current: Math.round(playerHealth),
+        max: CONFIG.health.playerMax,
+        pct: Math.round(healthRatio * 100),
+        criticalStartPct: Math.round((CONFIG.health.playerCriticalStart ?? 0.7) * 100)
+      },
+      pedestrianHealthHud: pedestrianBarTargets,
 
       isRefueling: player.isRefueling,
       inGasStation,

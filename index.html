@@ -26,6 +26,7 @@
       <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
       <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
       <p><strong>Inventario:</strong> 1/2/3/4/5 cambia slot, I abre la mochila y Q/F cambia producto en tienda.</p>
+      <p><strong>Test vida:</strong> ¡ baja vida temporalmente para probar daÃ±o, regeneraciÃ³n y efecto rojo.</p>
       <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
@@ -46,6 +47,22 @@
     <div class="mission-footer">
       <span id="mission-meta">Sin pedido</span>
       <span id="mission-count">0 entregas</span>
+    </div>
+  </div>
+
+  <div id="health-card" class="panel health-card normal">
+    <div class="health-header">
+      <span class="health-title">VIDA</span>
+      <span id="health-percent" class="health-percent">100%</span>
+    </div>
+
+    <div class="health-bar-shell">
+      <div id="health-bar-fill" class="health-bar-fill"></div>
+    </div>
+
+    <div class="health-meta">
+      <span id="health-value">100 / 100</span>
+      <span id="health-state">Completa</span>
     </div>
   </div>
 
@@ -114,6 +131,8 @@
   </div>
 
   <div id="prompt" class="prompt hidden"></div>
+  <div id="ped-health-layer" class="ped-health-layer" aria-hidden="true"></div>
+  <div id="damage-overlay" class="damage-overlay hidden" aria-hidden="true"></div>
   <div id="crosshair" class="crosshair hidden" aria-hidden="true">
     <span class="crosshair-ring"></span>
     <span class="crosshair-dot"></span>

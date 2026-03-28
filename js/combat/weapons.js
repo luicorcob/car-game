@@ -226,6 +226,7 @@ export function createWeaponController() {
       weaponId: weapon.id,
       label: weapon.label,
       shortLabel: weapon.shortLabel,
+      damage: weapon.damage ?? 25,
       range: weapon.range,
       hitRadius: weapon.hitRadius,
       visualTracerLength: weapon.visualTracerLength,

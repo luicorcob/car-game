@@ -622,6 +622,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       targets.push({
         id: ped.id,
         x: ped.group.position.x,
+        y: ped.group.position.y + 2.05,
         z: ped.group.position.z,
         radius: ped.radius
       });
@@ -632,6 +633,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       targets.push({
         id: ped.id,
         x: ped.group.position.x,
+        y: ped.group.position.y + 2.05,
         z: ped.group.position.z,
         radius: ped.radius
       });

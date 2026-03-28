@@ -11,6 +11,7 @@ export function createInput() {
     toggleFirstPerson: false,
     jump: false,
     sprint: false,
+    debugDamage: false,
 
     fire: false,
     aim: false,
@@ -82,6 +83,13 @@ export function createInput() {
 
   window.addEventListener("keydown", (event) => {
     if (isTypingTarget(event.target)) return;
+
+    if (event.key === "¡" || event.code === "Backquote") {
+      if (!event.repeat) {
+        pulse("debugDamage");
+      }
+      return;
+    }
 
     if (event.code === "KeyN") {
       if (!event.repeat) {
