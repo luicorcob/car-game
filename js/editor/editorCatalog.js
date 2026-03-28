@@ -108,6 +108,14 @@ const LEGACY_EDITOR_ITEMS = [
     color: "#f8fafc",
     primitiveType: "lamp",
     category: "decor"
+  }),
+  createPrimitiveItem({
+    id: "hostile-npc",
+    label: "NPC malo",
+    hint: "Peatón hostil rojo",
+    color: "#ef4444",
+    primitiveType: "hostile-npc",
+    category: "decor"
   })
 ];
 

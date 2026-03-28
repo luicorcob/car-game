@@ -215,20 +215,24 @@ export function createParkedCar(color = 0x3366ff) {
   return group;
 }
 
-export function createPedestrian(seed) {
+export function createPedestrian(seed, options = {}) {
   const rnd = makeRng(seed);
   const group = new THREE.Group();
+  const hostile = !!options.hostile;
 
-  const shirtColors = [0xef476f, 0x118ab2, 0x06d6a0, 0xffb703, 0x8ecae6];
   const trouserColors = [0x33415c, 0x2b2d42, 0x3a5a40, 0x5c677d];
 
+  const shirtColor = hostile ? 0xdc2626 : 0xffb703;
+  const hasRedShirt = hostile;
   const shirtMat = new THREE.MeshStandardMaterial({
-    color: shirtColors[Math.floor(rnd() * shirtColors.length)]
+    color: shirtColor
   });
   const trouserMat = new THREE.MeshStandardMaterial({
     color: trouserColors[Math.floor(rnd() * trouserColors.length)]
   });
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xf1c27d });
+  const skinMat = new THREE.MeshStandardMaterial({
+    color: hasRedShirt ? 0x8d5524 : 0xf1c27d
+  });
 
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(0.48, 0.8, 0.26),
@@ -236,6 +240,19 @@ export function createPedestrian(seed) {
   );
   body.position.y = 1.25;
   group.add(body);
+
+  if (hostile) {
+    const chestBand = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 0.16, 0.28),
+      new THREE.MeshStandardMaterial({
+        color: 0xfee2e2,
+        emissive: 0x5f1010,
+        emissiveIntensity: 0.35
+      })
+    );
+    chestBand.position.set(0, 1.22, 0.01);
+    group.add(chestBand);
+  }
 
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.22, 12, 12),
@@ -264,11 +281,34 @@ export function createPedestrian(seed) {
 
   group.add(armLeft, armRight, legLeft, legRight);
 
+  let weapon = null;
+  if (hostile) {
+    weapon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.14, 0.42),
+      new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.55 })
+    );
+    weapon.position.set(0.06, -0.08, -0.18);
+    armRight.add(weapon);
+
+    const armBand = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.1, 0.16),
+      new THREE.MeshStandardMaterial({
+        color: 0xff3b30,
+        emissive: 0x6a120b,
+        emissiveIntensity: 0.45
+      })
+    );
+    armBand.position.set(0, 0.12, 0);
+    armLeft.add(armBand);
+  }
+
   return {
     group,
     armLeft,
     armRight,
     legLeft,
-    legRight
+    legRight,
+    weapon,
+    hostile
   };
 }

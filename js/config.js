@@ -76,6 +76,16 @@ export const CONFIG = {
     pedestrianBarDistance: 58
   },
 
+  npc: {
+    hostileChance: 0.18,
+    detectDistance: 20,
+    attackRange: 16,
+    forgetDistance: 28,
+    damage: 8,
+    fireIntervalMin: 0.75,
+    fireIntervalMax: 1.45
+  },
+
   camera: {
     height: 6.2,
     followDistance: 14,

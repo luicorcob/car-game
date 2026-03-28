@@ -177,25 +177,37 @@ function createHouseVisual(def) {
   const beam = new THREE.Mesh(
     new THREE.CylinderGeometry(0.18, 0.42, 6.8, 16),
     new THREE.MeshBasicMaterial({
-      color: 0x60a5fa,
+      color: 0x4ade80,
       transparent: true,
-      opacity: 0.16
+      opacity: 0.2
     })
   );
   beam.position.y = 6.5;
   marker.add(beam);
 
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(1.55, 0.08, 10, 30),
+    new THREE.TorusGeometry(7.4, 0.18, 16, 56),
     new THREE.MeshBasicMaterial({
-      color: 0x93c5fd,
+      color: 0x22c55e,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.94
     })
   );
   ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.14;
+  ring.position.y = 0.16;
   marker.add(ring);
+
+  const outerRing = new THREE.Mesh(
+    new THREE.TorusGeometry(8.4, 0.08, 12, 64),
+    new THREE.MeshBasicMaterial({
+      color: 0xbbf7d0,
+      transparent: true,
+      opacity: 0.64
+    })
+  );
+  outerRing.rotation.x = Math.PI / 2;
+  outerRing.position.y = 0.1;
+  marker.add(outerRing);
 
   const label = new THREE.Mesh(
     new THREE.PlaneGeometry(3.6, 1.2),
@@ -214,6 +226,7 @@ function createHouseVisual(def) {
     group,
     marker,
     ring,
+    outerRing,
     beam,
     label
   };
@@ -374,7 +387,9 @@ export function createDeliveryHousesController(scene, graph, hooks = {}) {
     active.visual.marker.position.y = Math.sin(t * 2.4) * 0.18;
     active.visual.ring.rotation.z += dt * 0.9;
     active.visual.ring.scale.setScalar(1 + Math.sin(t * 3.1) * 0.06);
-    active.visual.beam.material.opacity = 0.11 + Math.abs(Math.sin(t * 2.1)) * 0.08;
+    active.visual.outerRing.rotation.z -= dt * 0.55;
+    active.visual.outerRing.scale.setScalar(1.02 + Math.sin(t * 2.6) * 0.09);
+    active.visual.beam.material.opacity = 0.15 + Math.abs(Math.sin(t * 2.1)) * 0.12;
   }
 
   return {

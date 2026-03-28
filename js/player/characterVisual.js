@@ -497,6 +497,13 @@ export function createPlayerCharacter() {
   firstPersonAnchor.position.set(0, 2.02, 0.02);
   root.add(firstPersonAnchor);
 
+  const firstPersonPizzaBox = createPizzaBox();
+  firstPersonPizzaBox.position.set(0.32, -0.33, 0.82);
+  firstPersonPizzaBox.rotation.set(0.08, -0.18, -0.28);
+  firstPersonPizzaBox.scale.setScalar(0.78);
+  firstPersonPizzaBox.visible = false;
+  firstPersonAnchor.add(firstPersonPizzaBox);
+
   const firstPersonWeaponRoot = new THREE.Group();
   firstPersonWeaponRoot.position.set(-0.54, -0.29, 0.52);
   firstPersonWeaponRoot.rotation.set(-0.08, 0.025, -0.012);
@@ -552,6 +559,7 @@ export function createPlayerCharacter() {
     legLeftPivot,
     legRightPivot,
     pizzaBox,
+    firstPersonPizzaBox,
     weaponHandRoot,
     firstPersonAnchor,
     firstPersonWeaponRoot,
@@ -653,6 +661,9 @@ export function resetPlayerCharacterVisual(character) {
   rig.shadow.visible = true;
   rig.shadow.material.opacity = 0.2;
   rig.pizzaBox.visible = false;
+  rig.firstPersonPizzaBox.visible = false;
+  rig.firstPersonPizzaBox.position.set(0.32, -0.33, 0.82);
+  rig.firstPersonPizzaBox.rotation.set(0.08, -0.18, -0.28);
 
   rig.weaponHandRoot.position.set(-0.03, -0.65, 0.08);
   rig.weaponHandRoot.rotation.set(-1.3, -Math.PI / 2 + 0.03, 0.05);
@@ -729,6 +740,7 @@ export function updatePlayerCharacterVisual(character, dt, state) {
 
   rig.shadow.visible = !inFirstPerson;
   rig.pizzaBox.visible = carryingPizza && !inFirstPerson;
+  rig.firstPersonPizzaBox.visible = carryingPizza && inFirstPerson;
   rig.firstPersonAnchor.position.set(0, 2.02 - rig.crouchBlend * 0.52, 0.02);
   rig.firstPersonAnchor.rotation.set(-aimPitch * 0.92, 0, 0);
 
@@ -807,6 +819,17 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     rig.pizzaBox.position.set(0, 1.26 + bob * 0.28, 0.34);
     rig.pizzaBox.rotation.y += dt * 0.8;
     rig.pizzaBox.rotation.y *= 0.92;
+
+    rig.firstPersonPizzaBox.position.set(
+      0.32,
+      -0.33 - bob * 0.45,
+      0.82 + Math.abs(legSwing) * 0.045
+    );
+    rig.firstPersonPizzaBox.rotation.set(
+      0.08 + bob * 0.8,
+      -0.18,
+      -0.28 + bob * 0.36
+    );
   } else if (hasWeapon) {
     rig.legLeftPivot.rotation.x = legSwing * 0.82 + rig.crouchBlend * 0.58;
     rig.legRightPivot.rotation.x = -legSwing * 0.82 + rig.crouchBlend * 0.58;

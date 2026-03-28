@@ -422,6 +422,7 @@ export function createWorld(scene) {
     isPlayerNearWeaponShopCounter: weaponShop.isNearCounter,
 
     getPedestrianTargets: decor.getPedestrianTargets,
+    getHostilePedestrians: decor.getHostilePedestrians,
     destroyPedestrian: decor.destroyPedestrian,
     removeEditorObject
   };
