@@ -108,7 +108,7 @@ export function createInput() {
 
     if (event.code === "KeyP") {
       if (!event.repeat) {
-        input.togglePhone = true;
+        input.togglePhone = true;}}
     if (event.code === "KeyI") {
       if (!event.repeat) {
         input.toggleInventory = true;

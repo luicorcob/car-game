@@ -2401,7 +2401,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   return {
     reset,
     update,
-    requestTaxiPickup
+    requestTaxiPickup,
     moveInventorySlot,
     setWeaponSoundVolume,
     getWeaponSoundVolume
