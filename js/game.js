@@ -44,6 +44,11 @@ const INVENTORY_SLOT_COUNT = 20;
 const HOTBAR_SLOT_COUNT = 5;
 
 const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+const HOSTILE_NPC_SHOT = {
+  visualTracerColor: 0xff8c1a,
+  visualTracerThickness: 0.032,
+  visualTracerLife: 0.08
+};
 const WEAPON_SOUND_CONFIG = {
   pistol: {
     src: "../sounds/pistola.mp3",
@@ -369,6 +374,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let playerHealthRegenTimer = 0;
   let weaponSoundVolume = 0.5;
   const pedestrianHealth = new Map();
+  const hostileNpcCooldowns = new Map();
   const MAX_SHOT_BLOOM = 1.6;
 
   weaponSounds.setMasterVolume(weaponSoundVolume);
@@ -397,6 +403,30 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return playerHealth;
   }
 
+  function getHostileNpcCooldown(id) {
+    if (!hostileNpcCooldowns.has(id)) {
+      hostileNpcCooldowns.set(
+        id,
+        randRange(
+          CONFIG.npc.fireIntervalMin ?? 0.75,
+          CONFIG.npc.fireIntervalMax ?? 1.45
+        )
+      );
+    }
+
+    return hostileNpcCooldowns.get(id);
+  }
+
+  function resetHostileNpcCooldown(id) {
+    hostileNpcCooldowns.set(
+      id,
+      randRange(
+        CONFIG.npc.fireIntervalMin ?? 0.75,
+        CONFIG.npc.fireIntervalMax ?? 1.45
+      )
+    );
+  }
+
   function updatePlayerHealthRegen(dt) {
     if (gameOver || playerHealth >= CONFIG.health.playerMax) return;
 
@@ -408,6 +438,52 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       0,
       CONFIG.health.playerMax
     );
+  }
+
+  function updateHostileNpcAttacks(dt, activePose) {
+    if (gameOver || !activePose) return;
+
+    const detectDistanceSq = Math.pow(CONFIG.npc.detectDistance ?? 20, 2);
+    const attackDistanceSq = Math.pow(CONFIG.npc.attackRange ?? 16, 2);
+    const forgetDistanceSq = Math.pow(CONFIG.npc.forgetDistance ?? 28, 2);
+    const targetHeight = playerMode === "walking" ? 1.45 : 0.92;
+    const npcDamage = CONFIG.npc.damage ?? 8;
+
+    for (const npc of world.getHostilePedestrians?.() ?? []) {
+      const dx = activePose.x - npc.x;
+      const dz = activePose.z - npc.z;
+      const distSq = dx * dx + dz * dz;
+
+      if (distSq > forgetDistanceSq) {
+        hostileNpcCooldowns.delete(npc.id);
+        continue;
+      }
+
+      const nextCooldown = getHostileNpcCooldown(npc.id) - dt;
+      hostileNpcCooldowns.set(npc.id, nextCooldown);
+
+      if (distSq > detectDistanceSq || distSq > attackDistanceSq) {
+        continue;
+      }
+
+      if ((npc.alert ?? 0) < 0.08 || nextCooldown > 0) {
+        continue;
+      }
+
+      const start = new THREE.Vector3(npc.x, npc.y ?? 1.45, npc.z);
+      const end = new THREE.Vector3(activePose.x, targetHeight, activePose.z);
+      spawnShotTracer(start, end, HOSTILE_NPC_SHOT);
+      resetHostileNpcCooldown(npc.id);
+
+      const remainingHealth = damagePlayer(npcDamage);
+      if (remainingHealth > 0) continue;
+
+      gameOver = true;
+      failureLabel = "Te abatieron";
+      characterDestroyed = true;
+      playerCharacter.visible = false;
+      break;
+    }
   }
 
   function getTrafficHitDamage(speed) {
@@ -667,6 +743,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     playerHealth = CONFIG.health.playerMax;
     playerHealthRegenTimer = 0;
     pedestrianHealth.clear();
+    hostileNpcCooldowns.clear();
 
     spawnTraffic();
   }
@@ -1519,6 +1596,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           const removed = world.destroyPedestrian(ped.id);
           if (removed) {
             pedestrianHealth.delete(ped.id);
+            hostileNpcCooldowns.delete(ped.id);
             destruction.triggerPedestrianHit(
               removed,
               player.pose.heading,
@@ -1591,6 +1669,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     if (!removed) return;
 
     pedestrianHealth.delete(hit.id);
+    hostileNpcCooldowns.delete(hit.id);
 
     destruction.triggerPedestrianHit(
       removed,
@@ -2047,6 +2126,14 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         } else {
           checkPedestrianTrafficCollisions(character.getState());
         }
+      }
+
+      if (!gameOver) {
+        const hostileTargetPose =
+          playerMode === "walking"
+            ? character.getState()
+            : player.pose;
+        updateHostileNpcAttacks(dt, hostileTargetPose);
       }
 
       updatePlayerHealthRegen(dt);

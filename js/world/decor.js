@@ -16,6 +16,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   const movingPedestrians = [];
   const staticPedestrians = [];
   const parkedCars = [];
+  const hostilePedestrians = [];
   const viewForward = new THREE.Vector3();
   const viewForwardXZ = new THREE.Vector2();
   const cachedView = {
@@ -33,6 +34,40 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     fz: 0
   };
   let staticCullAccumulator = Infinity;
+
+  function isHostilePedestrian(rnd) {
+    return rnd() < (CONFIG.npc.hostileChance ?? 0.18);
+  }
+
+  function applyPedestrianAlertPose(ped, targetX, targetZ, strength = 1) {
+    const dx = targetX - ped.group.position.x;
+    const dz = targetZ - ped.group.position.z;
+
+    ped.group.rotation.y = Math.atan2(dx, dz);
+    ped.armLeft.rotation.x = THREE.MathUtils.lerp(
+      ped.armLeft.rotation.x,
+      -0.45 * strength,
+      0.22
+    );
+    ped.armRight.rotation.x = THREE.MathUtils.lerp(
+      ped.armRight.rotation.x,
+      -1.2 * strength,
+      0.3
+    );
+    ped.armRight.rotation.y = THREE.MathUtils.lerp(
+      ped.armRight.rotation.y,
+      -0.18 * strength,
+      0.24
+    );
+    ped.legLeft.rotation.x *= 1 - 0.14 * strength;
+    ped.legRight.rotation.x *= 1 - 0.14 * strength;
+  }
+
+  function relaxPedestrianPose(ped, strength = 0.16) {
+    ped.armLeft.rotation.x = THREE.MathUtils.lerp(ped.armLeft.rotation.x, 0, strength);
+    ped.armRight.rotation.x = THREE.MathUtils.lerp(ped.armRight.rotation.x, 0, strength);
+    ped.armRight.rotation.y = THREE.MathUtils.lerp(ped.armRight.rotation.y, 0, strength);
+  }
 
   function isReserved(x, z, padding = 0) {
     if (!hooks.isReservedArea) return false;
@@ -361,7 +396,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         continue;
       }
 
-      const ped = createPedestrian(2000 + i * 7);
+      const hostile = isHostilePedestrian(rnd);
+      const ped = createPedestrian(2000 + i * 7, { hostile });
       ped.group.userData.editorRemovable = true;
       ped.group.position.copy(start);
       ped.group.rotation.y = heading;
@@ -371,6 +407,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       movingPedestrians.push({
         id: `mp_${i}`,
         alive: true,
+        hostile,
+        alert: 0,
         radius: 0.42,
         ...ped,
         start,
@@ -381,6 +419,10 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         phase: rnd() * Math.PI * 2,
         simAccumulator: 0
       });
+
+      if (hostile) {
+        hostilePedestrians.push(movingPedestrians[movingPedestrians.length - 1]);
+      }
     }
   }
 
@@ -413,10 +455,12 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
         if (isReserved(x, z, 2.8)) continue;
 
-        const ped = createPedestrian(9000 + created * 13);
+        const hostile = isHostilePedestrian(rnd);
+        const ped = createPedestrian(9000 + created * 13, { hostile });
         ped.group.userData.editorRemovable = true;
         ped.group.position.set(x, 0, z);
-        ped.group.rotation.y = rnd() * Math.PI * 2;
+        const idleHeading = rnd() * Math.PI * 2;
+        ped.group.rotation.y = idleHeading;
 
         const armPose = (rnd() - 0.5) * 0.52;
         const legPose = (rnd() - 0.5) * 0.38;
@@ -430,9 +474,15 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         staticPedestrians.push({
           id: `sp_${created}`,
           alive: true,
+          hostile,
+          alert: 0,
+          idleHeading,
           radius: 0.42,
           ...ped
         });
+        if (hostile) {
+          hostilePedestrians.push(staticPedestrians[staticPedestrians.length - 1]);
+        }
         created++;
       }
     }
@@ -587,6 +637,31 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         }
       }
 
+      const playerDistance = playerPose
+        ? Math.hypot(
+            ped.group.position.x - playerPose.x,
+            ped.group.position.z - playerPose.z
+          )
+        : Infinity;
+      const detectDistance = CONFIG.npc.detectDistance ?? 20;
+      const forgetDistance = CONFIG.npc.forgetDistance ?? detectDistance * 1.4;
+      const shouldAlert = ped.hostile && playerDistance <= detectDistance;
+      ped.alert = THREE.MathUtils.clamp(
+        ped.alert + (shouldAlert ? 1 : -1) * simDt * (shouldAlert ? 3.4 : 1.4),
+        0,
+        1
+      );
+
+      if (
+        ped.hostile &&
+        playerPose &&
+        (ped.alert > 0.05 || playerDistance <= forgetDistance)
+      ) {
+        applyPedestrianAlertPose(ped, playerPose.x, playerPose.z, ped.alert || 1);
+        ped.group.position.y = 0;
+        continue;
+      }
+
       ped.t += ped.dir * ped.speed * simDt;
 
       if (ped.t > 1) {
@@ -608,9 +683,39 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       const walk = Math.sin((ped.phase + ped.t * 10) * 2.0);
       ped.armLeft.rotation.x = walk * 0.42;
       ped.armRight.rotation.x = -walk * 0.42;
+      ped.armRight.rotation.y = 0;
       ped.legLeft.rotation.x = -walk * 0.5;
       ped.legRight.rotation.x = walk * 0.5;
       ped.group.position.y = Math.abs(walk) * 0.015;
+    }
+
+    for (const ped of staticPedestrians) {
+      if (!ped.alive || !ped.group.visible) continue;
+
+      const playerDistance = playerPose
+        ? Math.hypot(
+            ped.group.position.x - playerPose.x,
+            ped.group.position.z - playerPose.z
+          )
+        : Infinity;
+      const detectDistance = CONFIG.npc.detectDistance ?? 20;
+      const shouldAlert = ped.hostile && playerDistance <= detectDistance;
+      ped.alert = THREE.MathUtils.clamp(
+        ped.alert + (shouldAlert ? 1 : -1) * dt * (shouldAlert ? 3.4 : 1.2),
+        0,
+        1
+      );
+
+      if (ped.hostile && ped.alert > 0.05 && playerPose) {
+        applyPedestrianAlertPose(ped, playerPose.x, playerPose.z, ped.alert);
+      } else {
+        ped.group.rotation.y = THREE.MathUtils.lerp(
+          ped.group.rotation.y,
+          ped.idleHeading ?? ped.group.rotation.y,
+          0.08
+        );
+        relaxPedestrianPose(ped);
+      }
     }
   }
 
@@ -624,7 +729,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         x: ped.group.position.x,
         y: ped.group.position.y + 2.05,
         z: ped.group.position.z,
-        radius: ped.radius
+        radius: ped.radius,
+        hostile: ped.hostile
       });
     }
 
@@ -635,11 +741,25 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         x: ped.group.position.x,
         y: ped.group.position.y + 2.05,
         z: ped.group.position.z,
-        radius: ped.radius
+        radius: ped.radius,
+        hostile: ped.hostile
       });
     }
 
     return targets;
+  }
+
+  function getHostilePedestrians() {
+    return hostilePedestrians
+      .filter((ped) => ped.alive)
+      .map((ped) => ({
+        id: ped.id,
+        x: ped.group.position.x,
+        y: ped.group.position.y + 1.45,
+        z: ped.group.position.z,
+        radius: ped.radius,
+        alert: ped.alert ?? 0
+      }));
   }
 
   function destroyPedestrian(id) {
@@ -660,6 +780,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     build,
     updateDecorations,
     getPedestrianTargets,
+    getHostilePedestrians,
     destroyPedestrian
   };
 }
