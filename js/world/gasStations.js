@@ -855,7 +855,8 @@ export function createGasStationController(scene, graph) {
       .map((station) => ({
         id: station.id,
         brand: station.brand,
-        center: { ...station.apronCenter }
+        center: { ...station.apronCenter },
+        pumpPositions: station.pumpPositions.map((pump) => ({ ...pump }))
       }));
   }
 

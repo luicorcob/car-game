@@ -5,14 +5,21 @@ export const CONFIG = {
   intersectionSize: 44,
 
   player: {
-    maxSpeed: 0.5,
-    acceleration: 0.008,
-    braking: 0.018,
-    drag: 0.005,
+    maxSpeed: 0.58,
+    reverseMaxSpeed: 0.22,
+    acceleration: 0.0105,
+    braking: 0.03,
+    drag: 0.016,
+    coastDrag: 0.006,
 
-    laneChangeSpeed: 0.18,
-    laneChangeResponse: 8,
-    laneRecenterInTurn: 8,
+    steerResponse: 7.5,
+    steerReturn: 5.8,
+    steerRate: 0.1,
+    steerAtLowSpeed: 1.2,
+    steerAtHighSpeed: 0.42,
+    steerVisualYaw: 0.12,
+    bodyRoll: 0.075,
+    collisionDamping: 0.22,
 
     choiceWindow: 48,
 

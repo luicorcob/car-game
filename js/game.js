@@ -176,6 +176,12 @@ function localizePoint(point, origin, heading) {
   };
 }
 
+function distanceSq2D(a, b) {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return dx * dx + dz * dz;
+}
+
 export function createGame(scene, playerCar, playerCharacter, world) {
   const traffic = [];
   const character = createCharacterController(world);
@@ -193,6 +199,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     segmentS: 0,
     laneOffset: 0,
     laneVelocity: 0,
+    steer: 0,
     speed: 0,
     requestedTurn: 0,
     pose: { x: 0, z: 0, heading: 0 },
@@ -212,6 +219,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let playerMode = "driving";
   let failureLabel = "Chocado";
   let characterDestroyed = false;
+  let activeRefuelStationId = null;
 
   function clearShotTracers() {
     while (shotTracers.length) {
@@ -399,12 +407,14 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.segmentS = 0;
     player.laneOffset = 0;
     player.laneVelocity = 0;
+    player.steer = 0;
     player.speed = 0;
     player.requestedTurn = 0;
     player.pose = world.evaluateSegment(player.segment, 0, 0);
     player.fuel = CONFIG.fuel.start;
     player.canLeaveGasStop = false;
     player.isRefueling = false;
+    activeRefuelStationId = null;
 
     playerCar.position.set(player.pose.x, 0, player.pose.z);
     playerCar.rotation.set(0, Math.PI, 0);
@@ -424,50 +434,43 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function getGasStationAccess() {
-    if (!player.segment || gameOver) return null;
-    if (world.isGasStationSegment(player.segment)) return null;
-    if (playerMode !== "driving") return null;
+    if (playerMode !== "driving" || gameOver) return null;
 
-    return world.getGasStationAccess(
-      player.pose,
-      player.segment,
-      player.segmentS,
-      player.laneOffset,
-      player.speed
-    );
+    const stationInfos = world.getGasStationInfos?.() ?? [];
+    const maxDistanceSq = 7.2 * 7.2;
+    let best = null;
+    let bestDistanceSq = Infinity;
+
+    for (const station of stationInfos) {
+      for (const pump of station.pumpPositions ?? []) {
+        const distSq = distanceSq2D(player.pose, pump);
+        if (distSq > maxDistanceSq || distSq >= bestDistanceSq) continue;
+
+        bestDistanceSq = distSq;
+        best = {
+          stationId: station.id,
+          brand: station.brand,
+          distanceSq: distSq
+        };
+      }
+    }
+
+    return best;
   }
 
   function tryEnterGasStation(input) {
     const interactPressed = isInteractPressed(input);
     const justPressed = interactPressed && !prevInteract;
-    if (!justPressed) return null;
-    if (playerMode !== "driving") return null;
+    if (!justPressed || playerMode !== "driving" || gameOver) return null;
 
     const access = getGasStationAccess();
     if (!access) return null;
+    if (Math.abs(player.speed) > 0.035) return null;
+    if (player.fuel >= CONFIG.fuel.max - 0.001) return null;
 
-    const entrySegment = world.createGasStationEntrySegment(
-      player.pose,
-      player.segment,
-      player.segmentS,
-      player.laneOffset,
-      access.stationId
-    );
-
-    if (!entrySegment) return null;
-
-    player.segment = entrySegment;
-    player.segmentS = 0;
-    player.laneOffset = 0;
-    player.laneVelocity = 0;
-    player.requestedTurn = 0;
-    player.speed = Math.min(
-      Math.max(player.speed, 0.07),
-      CONFIG.fuel.serviceLaneMaxSpeed
-    );
-    player.canLeaveGasStop = false;
-    player.isRefueling = false;
-
+    activeRefuelStationId = access.stationId;
+    player.isRefueling = true;
+    player.speed = 0;
     return access;
   }
 
@@ -475,7 +478,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return (
       playerMode === "driving" &&
       !gameOver &&
-      player.speed <= CONFIG.onFoot.exitVehicleMaxSpeed
+      Math.abs(player.speed) <= CONFIG.onFoot.exitVehicleMaxSpeed
     );
   }
 
@@ -547,6 +550,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
     player.speed = 0;
     player.laneVelocity = 0;
+    player.steer = 0;
+    player.isRefueling = false;
+    activeRefuelStationId = null;
     playerMode = "walking";
     characterDestroyed = false;
 
@@ -576,6 +582,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     if (!canEnterVehicle(characterState)) return false;
 
     playerMode = "driving";
+    player.isRefueling = false;
+    activeRefuelStationId = null;
     playerCharacter.visible = false;
     characterDestroyed = false;
     return true;
@@ -583,135 +591,116 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
   function updateDrivingInput(input, dt, turnSensitivity = 1) {
     if (gameOver) return;
-
-    const onGasSegment = world.isGasStationSegment(player.segment);
     const outOfFuel = player.fuel <= 0.0001;
-
-    if (onGasSegment) {
-      if (player.segment.type === "gas-stop" && !player.canLeaveGasStop) {
-        player.speed = 0;
-        player.laneVelocity = 0;
-        return;
-      }
-
-      if (!outOfFuel && input.accelerate) {
-        player.speed += CONFIG.player.acceleration * 0.55 * dt * 60;
-      } else {
-        player.speed -= CONFIG.player.drag * 0.9 * dt * 60;
-      }
-
-      if (input.brake) {
-        player.speed -= CONFIG.player.braking * 1.1 * dt * 60;
-      }
-
-      player.speed = clamp(player.speed, 0, CONFIG.fuel.serviceLaneMaxSpeed);
-      player.laneVelocity = 0;
-      return;
-    }
-
-    if (!outOfFuel && input.accelerate) {
-      player.speed += CONFIG.player.acceleration * dt * 60;
-    } else {
-      player.speed -= CONFIG.player.drag * (outOfFuel ? 2.6 : 1) * dt * 60;
-    }
-
-    if (input.brake) {
-      player.speed -= CONFIG.player.braking * dt * 60;
-    }
-
-    player.speed = clamp(player.speed, 0, CONFIG.player.maxSpeed);
-
-    const upcoming = world.getUpcomingIntersectionInfo(
-      player.segment,
-      player.segmentS
+    const desiredSteer =
+      input.left && !input.right ? -1 : input.right && !input.left ? 1 : 0;
+    const steerBlend = Math.min(
+      1,
+      (desiredSteer === 0
+        ? CONFIG.player.steerReturn
+        : CONFIG.player.steerResponse) * dt
     );
 
-    const inChoiceWindow =
-      upcoming && upcoming.remaining <= CONFIG.player.choiceWindow;
+    player.steer += (desiredSteer - player.steer) * steerBlend;
+    const accelStep = CONFIG.player.acceleration * dt * 60;
+    const brakeStep = CONFIG.player.braking * dt * 60;
+    const coastFactor = Math.max(0, 1 - CONFIG.player.coastDrag * dt * 60);
+    const dragFactor = Math.max(0, 1 - CONFIG.player.drag * dt * 60);
 
-    if (inChoiceWindow) {
-      if (input.left && !input.right) {
-        player.requestedTurn = -1;
-      } else if (input.right && !input.left) {
-        player.requestedTurn = 1;
-      } else if (!input.left && !input.right) {
-        player.requestedTurn = 0;
+    if (!outOfFuel && input.accelerate) {
+      if (player.speed < 0) {
+        player.speed += brakeStep * 0.75;
+      } else {
+        player.speed += accelStep;
       }
-
-      player.laneVelocity *= 0.82;
+    } else if (input.brake) {
+      if (player.speed > 0.02) {
+        player.speed -= brakeStep;
+      } else {
+        player.speed -= accelStep * 0.82;
+      }
     } else {
-      let desiredLaneVelocity = 0;
-
-      if (input.left && !input.right) {
-        desiredLaneVelocity = -CONFIG.player.laneChangeSpeed * turnSensitivity;
-      }
-
-      if (input.right && !input.left) {
-        desiredLaneVelocity = CONFIG.player.laneChangeSpeed * turnSensitivity;
-      }
-
-      player.laneVelocity +=
-        (desiredLaneVelocity - player.laneVelocity) *
-        Math.min(1, CONFIG.player.laneChangeResponse * dt);
-
-      player.laneOffset += player.laneVelocity * dt * 60;
-      player.laneOffset = clamp(
-        player.laneOffset,
-        -world.laneClamp,
-        world.laneClamp
-      );
+      player.speed *= coastFactor;
     }
 
-    if (player.segment.type !== "road") {
-      player.laneOffset +=
-        (0 - player.laneOffset) *
-        Math.min(1, CONFIG.player.laneRecenterInTurn * dt);
-
-      player.laneVelocity *= 0.82;
+    if ((input.accelerate && player.speed > 0) || (input.brake && player.speed < 0)) {
+      player.speed *= dragFactor;
     }
+
+    player.speed = clamp(
+      player.speed,
+      -CONFIG.player.reverseMaxSpeed,
+      CONFIG.player.maxSpeed
+    );
+
+    const speedRatio = clamp(Math.abs(player.speed) / CONFIG.player.maxSpeed, 0, 1);
+    const steerAuthority =
+      CONFIG.player.steerAtLowSpeed +
+      (CONFIG.player.steerAtHighSpeed - CONFIG.player.steerAtLowSpeed) * speedRatio;
+    const direction = player.speed < -0.001 ? -1 : 1;
+    const yawStep =
+      player.steer *
+      CONFIG.player.steerRate *
+      steerAuthority *
+      turnSensitivity *
+      direction *
+      Math.min(1, 0.25 + speedRatio);
+
+    player.pose.heading = world.normalizeAngle(
+      player.pose.heading + yawStep * dt * 60
+    );
+    player.laneVelocity +=
+      ((player.steer * Math.abs(player.speed)) - player.laneVelocity) *
+      Math.min(1, 6 * dt);
   }
 
   function updateDrivingPlayer(dt) {
+    const forwardX = Math.sin(player.pose.heading);
+    const forwardZ = -Math.cos(player.pose.heading);
     const moveDistance = player.speed * dt * 60;
+    const desiredX = player.pose.x + forwardX * moveDistance;
+    const desiredZ = player.pose.z + forwardZ * moveDistance;
+    const collisionRadius =
+      (CONFIG.player.collisionRadiusX + CONFIG.player.collisionRadiusZ) * 0.42;
+    const resolved = world.resolveCharacterMotion(
+      { x: player.pose.x, z: player.pose.z },
+      collisionRadius,
+      desiredX,
+      desiredZ
+    );
 
-    advanceVehicleAlongGraph(player, moveDistance, world, (segment) => {
-      const info = world.getUpcomingIntersectionInfo(segment, segment.length);
-      const valid = info?.validTurns ?? [0];
+    const movedX = resolved.x - player.pose.x;
+    const movedZ = resolved.z - player.pose.z;
+    const actualDistance = Math.hypot(movedX, movedZ);
 
-      if (valid.includes(player.requestedTurn)) return player.requestedTurn;
-      if (valid.includes(0)) return 0;
-      return valid[0] ?? 0;
-    });
+    player.pose.x = resolved.x;
+    player.pose.z = resolved.z;
+    if (actualDistance + 0.001 < Math.abs(moveDistance)) {
+      player.speed *= CONFIG.player.collisionDamping;
+    }
 
-    player.pose = getVehiclePose(player, world);
     playerCar.position.set(player.pose.x, 0, player.pose.z);
 
     const baseYaw = Math.PI - player.pose.heading;
-    const visualYaw = world.isGasStationSegment(player.segment)
-      ? 0
-      : -player.laneVelocity * 0.25;
+    const speedRatio = clamp(player.speed / CONFIG.player.maxSpeed, 0, 1);
+    const visualYaw =
+      -player.steer * CONFIG.player.steerVisualYaw * (0.35 + Math.abs(speedRatio) * 0.65);
 
-    let visualRoll = world.isGasStationSegment(player.segment)
-      ? 0
-      : -player.laneVelocity * 0.14;
-
-    if (player.segment.type === "junction-turn") {
-      visualRoll += -player.segment.turn * 0.12;
-    }
+    let visualRoll =
+      -player.steer * CONFIG.player.bodyRoll * (0.25 + Math.abs(speedRatio) * 0.75);
 
     targetEuler.set(0, baseYaw + visualYaw, visualRoll);
     targetQuat.setFromEuler(targetEuler);
     playerCar.quaternion.slerp(targetQuat, 0.18);
 
-    score += player.speed * 10;
-    return moveDistance;
+    score += Math.abs(player.speed) * 10;
+    return actualDistance;
   }
 
   function updateFuel(dt, input, moveDistance) {
     if (gameOver) return;
     if (playerMode !== "driving") return;
     if (player.isRefueling) return;
-    if (world.isGasStationSegment(player.segment)) return;
 
     let consumption = moveDistance * CONFIG.fuel.consumptionPerUnit;
     consumption += dt * CONFIG.fuel.idlePerSecond;
@@ -724,10 +713,28 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function updateRefuelState(dt) {
-    player.isRefueling = false;
+    const access = getGasStationAccess();
+    const sameStationNearby =
+      !!access &&
+      !!activeRefuelStationId &&
+      access.stationId === activeRefuelStationId;
 
-    if (!player.segment || player.segment.type !== "gas-stop") return;
-    if (player.segmentS < player.segment.length - 0.01) return;
+    if (
+      playerMode !== "driving" ||
+      !sameStationNearby ||
+      Math.abs(player.speed) > 0.045
+    ) {
+      player.isRefueling = false;
+      activeRefuelStationId = null;
+      return;
+    }
+
+    if (player.fuel >= CONFIG.fuel.max - 0.001) {
+      player.fuel = CONFIG.fuel.max;
+      player.isRefueling = false;
+      activeRefuelStationId = null;
+      return;
+    }
 
     player.speed = 0;
     player.isRefueling = true;
@@ -735,12 +742,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       CONFIG.fuel.max,
       player.fuel + CONFIG.fuel.refuelRate * dt
     );
-
-    if (player.fuel >= CONFIG.fuel.max - 0.001) {
-      player.fuel = CONFIG.fuel.max;
-      player.isRefueling = false;
-      player.canLeaveGasStop = true;
-    }
   }
 
   function chooseTrafficTurn(segment) {
@@ -1117,18 +1118,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function getTurnSignal(upcomingIntersection) {
-    if (player.segment?.type === "junction-turn") {
-      return player.segment.turn;
-    }
-
-    if (
-      upcomingIntersection &&
-      upcomingIntersection.remaining <= CONFIG.player.choiceWindow &&
-      upcomingIntersection.remaining > 3
-    ) {
-      return player.requestedTurn;
-    }
-
     return 0;
   }
 
@@ -1160,14 +1149,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
         if (playerMode === "driving") {
           moveDistance = updateDrivingPlayer(dt);
+          gasAccess = getGasStationAccess();
           updateFuel(dt, input, moveDistance);
           updateRefuelState(dt);
-
-          upcomingIntersection = world.getUpcomingIntersectionInfo(
-            player.segment,
-            player.segmentS
-          );
-
+          upcomingIntersection = null;
           gasAccess = getGasStationAccess();
         }
       } else {
@@ -1240,7 +1225,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const characterState = character.getState();
     const missionState = pizzaDelivery.getState();
     const fuelRatio = player.fuel / CONFIG.fuel.max;
-    const inGasStation = playerMode === "driving" && world.isGasStationSegment(player.segment);
+    const inGasStation = !!gasAccess || player.isRefueling;
     const weaponHud = weapons.getHUDState(inWeaponShopCounter);
 
     let actionPrompt = "";
@@ -1257,7 +1242,15 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           actionPrompt = `Disparar [Click] · ${weaponHud.equippedShortLabel} · ${weaponHud.ammo} balas`;
         }
       } else if (gasAccess) {
-        actionPrompt = `Entrar a gasolinera [E] · ${gasAccess.brand}`;
+        if (player.fuel >= CONFIG.fuel.max - 0.001) {
+          actionPrompt = `Depósito lleno · ${gasAccess.brand}`;
+        } else if (Math.abs(player.speed) > 0.035) {
+          actionPrompt = `Frena junto al surtidor · ${gasAccess.brand}`;
+        } else if (player.isRefueling) {
+          actionPrompt = `Echando gasolina... · ${gasAccess.brand}`;
+        } else {
+          actionPrompt = `Echar gasolina [E] · ${gasAccess.brand}`;
+        }
       } else if (canExitVehicle()) {
         actionPrompt = "Salir del coche [E]";
       }
@@ -1290,18 +1283,18 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       speedKmh:
         playerMode === "walking"
           ? walkingSpeedKmh
-          : Math.round(player.speed * 150),
+          : Math.round(Math.abs(player.speed) * 150),
 
       rawSpeed:
         playerMode === "walking"
           ? characterState.planarSpeed
-          : player.speed,
+          : Math.abs(player.speed),
 
       isBraking:
         playerMode === "driving" &&
         !gameOver &&
         input.brake &&
-        player.speed > 0.01,
+        Math.abs(player.speed) > 0.01,
 
       isAccelerating:
         playerMode === "driving" &&
