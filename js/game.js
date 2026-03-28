@@ -1833,6 +1833,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         aimBlend: typeof controlContext?.aimBlend === "number"
           ? controlContext.aimBlend
           : 0,
+        crouching: !!characterState.crouching,
+        crouchBlend: characterState.crouchBlend ?? 0,
         planarSpeed: characterState.planarSpeed,
         jumpOffset: characterState.jumpOffset,
         onGround: characterState.onGround,

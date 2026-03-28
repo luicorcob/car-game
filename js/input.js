@@ -39,6 +39,7 @@ export function createInput() {
     Enter: "interact",
     ShiftLeft: "sprint",
     ShiftRight: "sprint",
+    KeyC: "crouch",
 
     KeyQ: "shopPrev",
     KeyF: "shopNext",
@@ -89,7 +90,7 @@ export function createInput() {
       return;
     }
 
-    if (event.code === "KeyV" || event.code === "KeyC") {
+    if (event.code === "KeyV") {
       if (!event.repeat) {
         input.toggleFirstPerson = true;
       }
@@ -107,7 +108,7 @@ export function createInput() {
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC" || event.code === "KeyI") return;
+    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyI") return;
     setKey(event.code, false);
   });
 

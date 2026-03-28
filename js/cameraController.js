@@ -245,6 +245,9 @@ export function createCameraController(camera, lookTarget, options = {}) {
     const heading = state.playerPose.heading;
 
     if (state.playerMode === "walking") {
+      const crouchBlend = state.characterState?.crouchBlend ?? 0;
+      const crouchCameraDrop = crouchBlend * 0.62;
+      const crouchLookDrop = crouchBlend * 0.4;
       const backX = -Math.sin(heading) * CONFIG.camera.walkFollowDistance;
       const backZ = Math.cos(heading) * CONFIG.camera.walkFollowDistance;
 
@@ -253,11 +256,11 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
       return {
         cameraX: state.playerPose.x + backX + sideX,
-        cameraY: CONFIG.camera.walkHeight + (state.characterState?.jumpOffset ?? 0) * 0.18,
+        cameraY: CONFIG.camera.walkHeight - crouchCameraDrop + (state.characterState?.jumpOffset ?? 0) * 0.18,
         cameraZ: state.playerPose.z + backZ + sideZ,
 
         lookX: state.playerPose.x + Math.sin(heading) * CONFIG.camera.walkLookAhead,
-        lookY: CONFIG.camera.walkLookHeight + (state.characterState?.jumpOffset ?? 0) * 0.35,
+        lookY: CONFIG.camera.walkLookHeight - crouchLookDrop + (state.characterState?.jumpOffset ?? 0) * 0.35,
         lookZ: state.playerPose.z - Math.cos(heading) * CONFIG.camera.walkLookAhead,
 
         firstPerson: false

@@ -16,6 +16,7 @@ export function createCharacterController(world) {
     jumpOffset: 0,
     onGround: true,
     coyoteTime: 0,
+    crouchBlend: 0,
 
     moveX: 0,
     moveZ: 0,
@@ -31,6 +32,7 @@ export function createCharacterController(world) {
     state.jumpOffset = 0;
     state.onGround = true;
     state.coyoteTime = 0;
+    state.crouchBlend = 0;
     state.moveX = 0;
     state.moveZ = 0;
     state.prevJump = false;
@@ -45,6 +47,8 @@ export function createCharacterController(world) {
       jumpOffset: state.jumpOffset,
       onGround: state.onGround,
       coyoteTime: state.coyoteTime,
+      crouchBlend: state.crouchBlend,
+      crouching: state.crouchBlend > 0.55,
       moveX: state.moveX,
       moveZ: state.moveZ
     };
@@ -53,6 +57,7 @@ export function createCharacterController(world) {
   function update(input, dt, extraColliders = [], control = null) {
     const useFirstPersonMovement = !!control?.firstPerson;
     const aiming = !!control?.aiming;
+    const crouchHeld = !!input.crouch;
     const thirdPersonTurnSensitivity =
       typeof control?.thirdPersonTurnSensitivity === "number"
         ? control.thirdPersonTurnSensitivity
@@ -84,9 +89,17 @@ export function createCharacterController(world) {
       moveZ = 0;
     }
 
+    state.crouchBlend = clamp(
+      state.crouchBlend + (crouchHeld ? 1 : -1) * dt * 8,
+      0,
+      1
+    );
+    const crouchMoveFactor = 1 - state.crouchBlend * 0.45;
+    const canSprint = !crouchHeld;
     const targetSpeed = isMoving
-      ? (input.sprint ? CONFIG.onFoot.runSpeed : CONFIG.onFoot.walkSpeed) *
-        (aiming ? 0.42 : 1)
+      ? ((input.sprint && canSprint) ? CONFIG.onFoot.runSpeed : CONFIG.onFoot.walkSpeed) *
+        (aiming ? 0.42 : 1) *
+        crouchMoveFactor
       : 0;
 
     const response = state.onGround
@@ -132,7 +145,7 @@ export function createCharacterController(world) {
       );
     }
 
-    const jumpPressed = !!input.jump;
+    const jumpPressed = !!input.jump && !crouchHeld;
     const jumpJustPressed = jumpPressed && !state.prevJump;
     state.coyoteTime = state.onGround
       ? 0.08

@@ -507,6 +507,7 @@ export function createPlayerCharacter() {
     animTime: 0,
     yaw: Math.PI,
     aimBlend: 0,
+    crouchBlend: 0,
     forceHiddenForFirstPerson: false,
 
     tempPosition: new THREE.Vector3(),
@@ -578,6 +579,7 @@ export function resetPlayerCharacterVisual(character) {
   rig.animTime = 0;
   rig.yaw = Math.PI;
   rig.aimBlend = 0;
+  rig.crouchBlend = 0;
   rig.forceHiddenForFirstPerson = false;
   character.visible = false;
   character.position.set(0, 0, 0);
@@ -595,6 +597,7 @@ export function resetPlayerCharacterVisual(character) {
 
   rig.weaponHandRoot.position.set(-0.17, -0.31, 0.19);
   rig.weaponHandRoot.rotation.set(-1.3, Math.PI / 2 - 0.03, -0.05);
+  rig.firstPersonAnchor.position.set(0, 2.02, 0.02);
   rig.firstPersonAnchor.rotation.set(0, 0, 0);
   rig.firstPersonWeaponRoot.position.set(-0.54, -0.29, 0.52);
   rig.firstPersonWeaponRoot.rotation.set(-0.08, 0.025, -0.012);
@@ -645,6 +648,7 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   const carryingPizza = !!state.carryingPizza;
   const aimPitch = typeof state.aimPitch === "number" ? state.aimPitch : 0;
   const aiming = !!state.aiming;
+  const crouchBlend = typeof state.crouchBlend === "number" ? state.crouchBlend : 0;
   const weaponState = state.weapon ?? {
     equippedId: null,
     hasEquippedWeapon: false,
@@ -655,8 +659,11 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     mesh.visible = !inFirstPerson;
   }
 
+  rig.crouchBlend = THREE.MathUtils.damp(rig.crouchBlend, crouchBlend, 14, dt);
+
   rig.shadow.visible = !inFirstPerson;
   rig.pizzaBox.visible = carryingPizza && !inFirstPerson;
+  rig.firstPersonAnchor.position.set(0, 2.02 - rig.crouchBlend * 0.52, 0.02);
   rig.firstPersonAnchor.rotation.set(-aimPitch * 0.92, 0, 0);
 
   for (const weapon of Object.values(rig.thirdPersonWeapons)) {
@@ -698,7 +705,7 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     bob *= 0.12;
   }
 
-  rig.root.position.y = bob;
+  rig.root.position.y = bob - rig.crouchBlend * 0.42;
 
   const hasWeapon = weaponState.hasEquippedWeapon && !carryingPizza;
   const targetAimBlend = inFirstPerson && aiming && hasWeapon ? 1 : 0;
@@ -708,8 +715,8 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   const sprintFactor = THREE.MathUtils.clamp((speedNorm - 0.58) / 0.42, 0, 1);
 
   if (carryingPizza) {
-    rig.legLeftPivot.rotation.x = legSwing * 0.72;
-    rig.legRightPivot.rotation.x = -legSwing * 0.72;
+    rig.legLeftPivot.rotation.x = legSwing * 0.72 + rig.crouchBlend * 0.55;
+    rig.legRightPivot.rotation.x = -legSwing * 0.72 + rig.crouchBlend * 0.55;
 
     rig.armLeftPivot.rotation.x = -1.1 + bob * 0.4;
     rig.armRightPivot.rotation.x = -1.1 + bob * 0.4;
@@ -720,8 +727,8 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     rig.pizzaBox.rotation.y += dt * 0.8;
     rig.pizzaBox.rotation.y *= 0.92;
   } else if (hasWeapon) {
-    rig.legLeftPivot.rotation.x = legSwing * 0.82;
-    rig.legRightPivot.rotation.x = -legSwing * 0.82;
+    rig.legLeftPivot.rotation.x = legSwing * 0.82 + rig.crouchBlend * 0.58;
+    rig.legRightPivot.rotation.x = -legSwing * 0.82 + rig.crouchBlend * 0.58;
 
     const aimPose = getThirdPersonWeaponPose(
       weaponState.equippedId,
@@ -787,11 +794,11 @@ export function updatePlayerCharacterVisual(character, dt, state) {
       }
     }
   } else {
-    rig.legLeftPivot.rotation.x = legSwing;
-    rig.legRightPivot.rotation.x = -legSwing;
+    rig.legLeftPivot.rotation.x = legSwing + rig.crouchBlend * 0.58;
+    rig.legRightPivot.rotation.x = -legSwing + rig.crouchBlend * 0.58;
 
-    rig.armLeftPivot.rotation.x = armSwing;
-    rig.armRightPivot.rotation.x = -armSwing;
+    rig.armLeftPivot.rotation.x = armSwing - rig.crouchBlend * 0.18;
+    rig.armRightPivot.rotation.x = -armSwing - rig.crouchBlend * 0.18;
     rig.armLeftPivot.rotation.z = 0;
     rig.armRightPivot.rotation.z = 0;
   }
