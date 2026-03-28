@@ -15,6 +15,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   const buildings = [];
   const movingPedestrians = [];
   const staticPedestrians = [];
+  const editorPedestrians = [];
   const parkedCars = [];
   const hostilePedestrians = [];
   const viewForward = new THREE.Vector3();
@@ -515,6 +516,66 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     addStaticPedestrians();
   }
 
+  function addEditorPedestrian(definition) {
+    const hostile = definition.type === "hostile-npc";
+    const ped = createPedestrian(12000 + editorPedestrians.length * 37, { hostile });
+    ped.group.userData.editorRemovable = true;
+    ped.group.userData.editorPlacementId = definition.id;
+    ped.group.position.set(definition.x, 0, definition.z);
+    ped.group.rotation.y = definition.rotation ?? 0;
+
+    if (!hostile) {
+      ped.armLeft.rotation.x = 0.3;
+      ped.armRight.rotation.x = -0.24;
+      ped.legLeft.rotation.x = -0.18;
+      ped.legRight.rotation.x = 0.16;
+    } else {
+      ped.armLeft.rotation.x = -0.12;
+      ped.armRight.rotation.x = -0.68;
+      ped.armRight.rotation.y = -0.12;
+    }
+
+    scene.add(ped.group);
+
+    const entry = {
+      id: definition.id,
+      placementId: definition.id,
+      alive: true,
+      hostile,
+      alert: 0,
+      idleHeading: definition.rotation ?? 0,
+      radius: 0.42,
+      fromEditor: true,
+      ...ped
+    };
+
+    editorPedestrians.push(entry);
+    if (hostile) {
+      hostilePedestrians.push(entry);
+    }
+
+    return ped.group;
+  }
+
+  function removeEditorPedestrianByPlacementId(placementId) {
+    const index = editorPedestrians.findIndex((ped) => ped.placementId === placementId);
+    if (index === -1) return false;
+
+    const [ped] = editorPedestrians.splice(index, 1);
+    ped.alive = false;
+
+    if (ped.group.parent) {
+      ped.group.parent.remove(ped.group);
+    }
+
+    const hostileIndex = hostilePedestrians.indexOf(ped);
+    if (hostileIndex >= 0) {
+      hostilePedestrians.splice(hostileIndex, 1);
+    }
+
+    return true;
+  }
+
   function buildViewContext(context) {
     const camera = context?.camera;
     if (!camera) return null;
@@ -738,6 +799,34 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         relaxPedestrianPose(ped);
       }
     }
+
+    for (const ped of editorPedestrians) {
+      if (!ped.alive || !ped.group.visible) continue;
+
+      const dx = playerPose ? playerPose.x - ped.group.position.x : 0;
+      const dz = playerPose ? playerPose.z - ped.group.position.z : 0;
+      const playerDistance = Math.hypot(dx, dz);
+      const detectDistance = CONFIG.npc.detectDistance ?? 20;
+      const shouldAlert = ped.hostile && playerPose && playerDistance <= detectDistance;
+
+      ped.alert = THREE.MathUtils.clamp(
+        ped.alert + (shouldAlert ? 1 : -1) * dt * (shouldAlert ? 3.4 : 1.2),
+        0,
+        1
+      );
+
+      if (ped.hostile && ped.alert > 0.05 && playerPose) {
+        applyPedestrianAlertPose(ped, playerPose.x, playerPose.z, ped.alert);
+        chasePlayer(ped, playerPose, dt, playerDistance);
+      } else {
+        ped.group.rotation.y = THREE.MathUtils.lerp(
+          ped.group.rotation.y,
+          ped.idleHeading ?? ped.group.rotation.y,
+          0.08
+        );
+        relaxPedestrianPose(ped);
+      }
+    }
   }
 
   function getPedestrianTargets() {
@@ -767,6 +856,18 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       });
     }
 
+    for (const ped of editorPedestrians) {
+      if (!ped.alive || !ped.group.visible) continue;
+      targets.push({
+        id: ped.id,
+        x: ped.group.position.x,
+        y: ped.group.position.y + 2.05,
+        z: ped.group.position.z,
+        radius: ped.radius,
+        hostile: ped.hostile
+      });
+    }
+
     return targets;
   }
 
@@ -784,12 +885,24 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   }
 
   function destroyPedestrian(id) {
-    const all = [...movingPedestrians, ...staticPedestrians];
+    const all = [...movingPedestrians, ...staticPedestrians, ...editorPedestrians];
     const ped = all.find((entry) => entry.id === id);
     if (!ped || !ped.alive) return null;
 
     ped.alive = false;
     ped.group.visible = false;
+
+    if (ped.fromEditor) {
+      const editorIndex = editorPedestrians.indexOf(ped);
+      if (editorIndex >= 0) {
+        editorPedestrians.splice(editorIndex, 1);
+      }
+    }
+
+    const hostileIndex = hostilePedestrians.indexOf(ped);
+    if (hostileIndex >= 0) {
+      hostilePedestrians.splice(hostileIndex, 1);
+    }
 
     return {
       x: ped.group.position.x,
@@ -802,6 +915,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     updateDecorations,
     getPedestrianTargets,
     getHostilePedestrians,
-    destroyPedestrian
+    destroyPedestrian,
+    addEditorPedestrian,
+    removeEditorPedestrianByPlacementId
   };
 }

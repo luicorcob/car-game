@@ -338,7 +338,21 @@ const editor = createEditorMode(
     jsonStatusEl: editorJsonStatusEl,
   },
   {
-    removeWorldObject: world.removeEditorObject
+    removeWorldObject: world.removeEditorObject,
+    createPlacementObject: (definition) => {
+      if (definition.type === "civilian-npc" || definition.type === "hostile-npc") {
+        return world.addEditorPedestrian(definition);
+      }
+      return null;
+    },
+    removePlacementObject: (definition, object) => {
+      if (definition.type === "civilian-npc" || definition.type === "hostile-npc") {
+        return world.removeEditorPedestrianByPlacementId(definition.id);
+      }
+      if (!object?.parent) return false;
+      object.parent.remove(object);
+      return true;
+    }
   }
 );
 
@@ -618,9 +632,14 @@ function updatePrompt(state) {
 
 function updateCrosshair(state) {
   const sniperScopeActive = isSniperScopeActive(state);
+  if (editor.isActive()) {
+    crosshairEl.classList.add("hidden");
+    document.body.style.cursor = "default";
+    return;
+  }
+
   const shouldShow =
     !inventoryMenuOpen &&
-    !editor.isActive() &&
     !state.gameOver &&
     state.playerMode === "walking" &&
     state.weaponHud.hasEquippedWeapon &&

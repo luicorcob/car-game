@@ -424,6 +424,8 @@ export function createWorld(scene) {
     getPedestrianTargets: decor.getPedestrianTargets,
     getHostilePedestrians: decor.getHostilePedestrians,
     destroyPedestrian: decor.destroyPedestrian,
+    addEditorPedestrian: decor.addEditorPedestrian,
+    removeEditorPedestrianByPlacementId: decor.removeEditorPedestrianByPlacementId,
     removeEditorObject
   };
 }
