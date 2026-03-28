@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { EDITOR_ITEMS, getEditorItem } from "./editorCatalog.js";
 import { PROJECT_LAYOUT } from "./projectLayout.js";
+import { createPedestrian } from "../world/props.js";
 
 const STORAGE_KEY_CURRENT = "road-driver-3d-editor-layout-current";
 const STORAGE_KEY_LIBRARY = "road-driver-3d-editor-layout-library";
@@ -11,12 +12,13 @@ const ROTATION_STEP = Math.PI / 2;
 const gltfLoader = new GLTFLoader();
 const gltfCache = new Map();
 
-const CATEGORY_ORDER = ["road", "building", "decor", "vehicle", "misc"];
+const CATEGORY_ORDER = ["road", "building", "decor", "npc", "vehicle", "misc"];
 const CATEGORY_LABELS = {
   road: "Carreteras",
   building: "Edificios",
   decor: "Decoración",
   vehicle: "Vehículos",
+  npc: "NPC",
   misc: "Otros"
 };
 
@@ -146,6 +148,27 @@ function createSharedMaterials() {
       emissive: 0x6a120b,
       emissiveIntensity: 0.42,
       roughness: 0.42
+    }),
+    civilianNpcShirt: new THREE.MeshStandardMaterial({
+      color: 0x22c55e,
+      roughness: 0.82
+    }),
+    civilianNpcPants: new THREE.MeshStandardMaterial({
+      color: 0x475569,
+      roughness: 0.86
+    }),
+    guardNpcShirt: new THREE.MeshStandardMaterial({
+      color: 0x2563eb,
+      roughness: 0.76
+    }),
+    guardNpcPants: new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.88
+    }),
+    guardNpcBand: new THREE.MeshStandardMaterial({
+      color: 0x93c5fd,
+      roughness: 0.4,
+      metalness: 0.08
     })
   };
 }
@@ -348,69 +371,21 @@ function createLampPiece(materials) {
   return group;
 }
 
+function createCivilianNpcPiece(materials) {
+  const ped = createPedestrian(101, { hostile: false });
+  ped.armLeft.rotation.x = 0.3;
+  ped.armRight.rotation.x = -0.24;
+  ped.legLeft.rotation.x = -0.18;
+  ped.legRight.rotation.x = 0.16;
+  return ped.group;
+}
+
 function createHostileNpcPiece(materials) {
-  const group = new THREE.Group();
-
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(4.8, 8, 2.6),
-    materials.hostileNpcShirt
-  );
-  body.position.y = 12.5;
-  group.add(body);
-
-  const chestBand = new THREE.Mesh(
-    new THREE.BoxGeometry(5, 1.6, 2.8),
-    materials.hostileNpcBand
-  );
-  chestBand.position.set(0, 12.2, 0.1);
-  group.add(chestBand);
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(2.2, 14, 14),
-    materials.hostileNpcSkin
-  );
-  head.position.y = 18.5;
-  group.add(head);
-
-  const armLeft = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 7, 1.4),
-    materials.hostileNpcShirt
-  );
-  armLeft.position.set(-3.5, 12, 0);
-  armLeft.rotation.z = 0.08;
-  group.add(armLeft);
-
-  const armRight = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 7, 1.4),
-    materials.hostileNpcShirt
-  );
-  armRight.position.set(3.5, 12.2, -0.2);
-  armRight.rotation.z = -0.18;
-  armRight.rotation.x = -0.55;
-  group.add(armRight);
-
-  const legLeft = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 7.8, 1.6),
-    materials.hostileNpcPants
-  );
-  legLeft.position.set(-1.2, 4.5, 0);
-  group.add(legLeft);
-
-  const legRight = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 7.8, 1.6),
-    materials.hostileNpcPants
-  );
-  legRight.position.set(1.2, 4.5, 0);
-  group.add(legRight);
-
-  const weapon = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1.4, 4.2),
-    materials.hostileNpcWeapon
-  );
-  weapon.position.set(4.2, 9.6, -1.8);
-  group.add(weapon);
-
-  return group;
+  const ped = createPedestrian(202, { hostile: true });
+  ped.armLeft.rotation.x = -0.12;
+  ped.armRight.rotation.x = -0.68;
+  ped.armRight.rotation.y = -0.12;
+  return ped.group;
 }
 
 function createPrimitivePiece(type, materials) {
@@ -420,6 +395,7 @@ function createPrimitivePiece(type, materials) {
   if (type === "tree") return createTreePiece(materials);
   if (type === "house") return createHousePiece(materials);
   if (type === "lamp") return createLampPiece(materials);
+  if (type === "civilian-npc") return createCivilianNpcPiece(materials);
   if (type === "hostile-npc") return createHostileNpcPiece(materials);
   return new THREE.Group();
 }
@@ -682,6 +658,26 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
     previewGroup.add(mesh);
   }
 
+  function createPlacementObject(definition) {
+    const custom = options.createPlacementObject?.(definition);
+    if (custom) return custom;
+
+    const mesh = createPieceMesh(definition.type, materials, { ghost: false });
+    mesh.position.set(definition.x, 0, definition.z);
+    mesh.rotation.y = definition.rotation;
+    placementGroup.add(mesh);
+    return mesh;
+  }
+
+  function removePlacementObject(definition, object) {
+    const handled = options.removePlacementObject?.(definition, object);
+    if (handled) return true;
+
+    if (!object?.parent) return false;
+    object.parent.remove(object);
+    return true;
+  }
+
   function syncPalette() {
     for (const [id, button] of paletteButtons.entries()) {
       button.classList.toggle("active", id === selectedType);
@@ -829,11 +825,8 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   }
 
   function addPlacement(definition) {
-    const mesh = createPieceMesh(definition.type, materials, { ghost: false });
-    mesh.position.set(definition.x, 0, definition.z);
-    mesh.rotation.y = definition.rotation;
+    const mesh = createPlacementObject(definition);
     mesh.userData.editorPlacementId = definition.id;
-    placementGroup.add(mesh);
     placedMeshes.set(definition.id, mesh);
     placements.push(definition);
   }
@@ -867,7 +860,7 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
 
     const mesh = placedMeshes.get(best.id);
     if (mesh) {
-      placementGroup.remove(mesh);
+      removePlacementObject(best, mesh);
       placedMeshes.delete(best.id);
     }
 
@@ -931,6 +924,12 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   }
 
   function clearAllPlacements() {
+    for (const entry of placements) {
+      const mesh = placedMeshes.get(entry.id);
+      if (!mesh) continue;
+      removePlacementObject(entry, mesh);
+    }
+
     placementGroup.clear();
     placedMeshes.clear();
     placements.length = 0;
@@ -942,6 +941,12 @@ export function createEditorMode(scene, camera, renderer, dom, options = {}) {
   function loadLayout(data, preserveSelection = true) {
     const normalized = normalizeLayoutData(data);
     if (!normalized) return false;
+
+    for (const entry of placements) {
+      const mesh = placedMeshes.get(entry.id);
+      if (!mesh) continue;
+      removePlacementObject(entry, mesh);
+    }
 
     placementGroup.clear();
     placedMeshes.clear();

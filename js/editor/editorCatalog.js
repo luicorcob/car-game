@@ -71,8 +71,8 @@ const LEGACY_EDITOR_ITEMS = [
   }),
   createPrimitiveItem({
     id: "tree",
-    label: "Árbol",
-    hint: "Vegetación",
+    label: "Arbol",
+    hint: "Vegetacion",
     color: "#22c55e",
     primitiveType: "tree",
     category: "decor"
@@ -88,7 +88,7 @@ const LEGACY_EDITOR_ITEMS = [
   createPrimitiveItem({
     id: "crossroad",
     label: "Cruce",
-    hint: "Intersección",
+    hint: "Interseccion",
     color: "#fb7185",
     primitiveType: "crossroad",
     category: "road"
@@ -110,12 +110,20 @@ const LEGACY_EDITOR_ITEMS = [
     category: "decor"
   }),
   createPrimitiveItem({
+    id: "civilian-npc",
+    label: "NPC civil",
+    hint: "Peaton normal",
+    color: "#22c55e",
+    primitiveType: "civilian-npc",
+    category: "npc"
+  }),
+  createPrimitiveItem({
     id: "hostile-npc",
     label: "NPC malo",
-    hint: "Peatón hostil rojo",
+    hint: "Peaton hostil rojo",
     color: "#ef4444",
     primitiveType: "hostile-npc",
-    category: "decor"
+    category: "npc"
   })
 ];
 
@@ -187,7 +195,7 @@ const DECOR_GLB_ITEMS = [
   }),
   createGlbItem({
     id: "grua-01",
-    label: "Grúa",
+    label: "Grua",
     hint: "Prop grande",
     color: "#34d399",
     category: "decor",
@@ -212,7 +220,7 @@ const VEHICLE_GLB_ITEMS = Array.from({ length: 15 }, (_, index) => {
   return createGlbItem({
     id: `vehicle-car-${pad}`,
     label: `Coche ${pad}`,
-    hint: "Vehículo aparcado",
+    hint: "Vehiculo aparcado",
     color: "#f43f5e",
     category: "vehicle",
     modelUrl: vehicleModelPath(`Car ${number}.glb`),
