@@ -237,7 +237,7 @@ function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
       handY: -0.67 + bob * 0.012,
       handZ: 0.08 - recoil * 0.025,
 
-      handRotX: -1.3 - recoil * 0.1,
+      handRotX: -1.84 - recoil * 0.1,
       handRotY: Math.PI / 2 - 0.03,
       handRotZ: -0.05
     };
@@ -260,6 +260,11 @@ function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
     : weaponId === "fusil"
       ? -0.1
       : 0;
+  const longGunRotX = weaponId === "francotirador"
+    ? -2.14
+    : weaponId === "fusil"
+      ? -2.02
+      : -1.88;
 
   return {
     armVisualRightX: -1.52 - recoil * 0.3 + bob * 0.02,
@@ -271,7 +276,7 @@ function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
     handY: -0.65 - longGunHandDrop + bob * 0.01,
     handZ: (longGunForward - 0.12) - recoil * 0.035,
 
-    handRotX: -1.5 - recoil * 0.12,
+    handRotX: longGunRotX - recoil * 0.12,
     handRotY: Math.PI / 2 - 0.025,
     handRotZ: -0.07
   };
@@ -829,29 +834,60 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     );
 
     const yawLeftBias = thirdPersonAimYaw < 0 ? 1.28 : 1;
+    const diagonalAimBlend =
+      Math.min(1, Math.abs(thirdPersonAimYaw) / 0.48) *
+      Math.min(1, Math.abs(thirdPersonAimPitch) / 0.32);
+    const diagonalYawSign = Math.sign(thirdPersonAimYaw || 0);
+    const diagonalPitchSign = Math.sign(thirdPersonAimPitch || 0);
+    const diagonalDownBlend =
+      diagonalPitchSign < 0 ? diagonalAimBlend * Math.abs(thirdPersonAimPitch / 0.32) : 0;
+    const diagonalUpBlend =
+      diagonalPitchSign > 0 ? diagonalAimBlend * Math.abs(thirdPersonAimPitch / 0.32) : 0;
 
     if (!inFirstPerson) {
       rig.armVisualRightPivot.rotation.y -= thirdPersonAimYaw * 1.28 * yawLeftBias;
       rig.armVisualLeftPivot.rotation.y -= thirdPersonAimYaw * 0.18 * yawLeftBias;
       rig.armVisualRightPivot.rotation.z -= thirdPersonAimYaw * 0.66 * yawLeftBias;
       rig.armVisualLeftPivot.rotation.z -= thirdPersonAimYaw * 0.12 * yawLeftBias;
-      rig.armVisualRightPivot.rotation.x -= thirdPersonAimPitch * 1.74 + recoil * 0.22;
-      rig.armVisualLeftPivot.rotation.x -= thirdPersonAimPitch * 0.2;
-      rig.weaponHandRoot.position.z -= recoil * 0.045;
-      rig.weaponHandRoot.position.y += recoil * 0.03;
-      rig.weaponHandRoot.rotation.x -= thirdPersonAimPitch * 0.52 + recoil * 0.22;
-      rig.weaponHandRoot.rotation.y -= thirdPersonAimYaw * 0.28 * yawLeftBias;
-      rig.weaponHandRoot.rotation.z += thirdPersonAimYaw * 0.05 * yawLeftBias - recoil * 0.06;
+      rig.armVisualRightPivot.rotation.x -=
+        thirdPersonAimPitch * 1.74 +
+        recoil * 0.22 +
+        diagonalUpBlend * 0.12 -
+        diagonalDownBlend * -0.01;
+      rig.armVisualLeftPivot.rotation.x -=
+        thirdPersonAimPitch * 0.2 +
+        diagonalUpBlend * 0.03;
+      rig.weaponHandRoot.position.z -= recoil * 0.045 + diagonalUpBlend * 0.02;
+      rig.weaponHandRoot.position.y +=
+        recoil * 0.03 -
+        diagonalUpBlend * 0.02 +
+        diagonalDownBlend * -0.006;
+      rig.weaponHandRoot.rotation.x -=
+        thirdPersonAimPitch * 0.52 +
+        recoil * 0.22 +
+        diagonalUpBlend * 0.1 -
+        diagonalDownBlend * -0.008;
+      rig.weaponHandRoot.rotation.y += thirdPersonAimYaw * 1.18 * yawLeftBias;
+      rig.weaponHandRoot.rotation.z -=
+        thirdPersonAimYaw * 0.04 * yawLeftBias +
+        recoil * 0.06 +
+        diagonalAimBlend * diagonalYawSign * 0.1;
     }
 
     if (!inFirstPerson) {
       const active = rig.thirdPersonWeapons[weaponState.equippedId];
       if (active) {
         applyThirdPersonWeaponAlignment(active, weaponState.equippedId);
-        active.group.rotation.x -= thirdPersonAimPitch * 0.4 + recoil * 0.18;
-        active.group.rotation.y -= thirdPersonAimYaw * 0.12 * yawLeftBias;
-        active.group.rotation.z += thirdPersonAimYaw * 0.08 * yawLeftBias;
-        active.group.position.z -= recoil * 0.035;
+        active.group.rotation.x -=
+          thirdPersonAimPitch * 0.4 +
+          recoil * 0.18 +
+          diagonalUpBlend * 0.08 -
+          diagonalDownBlend * -0.006;
+        active.group.rotation.y += thirdPersonAimYaw * 0.88 * yawLeftBias;
+        active.group.rotation.z -=
+          thirdPersonAimYaw * 0.06 * yawLeftBias +
+          diagonalAimBlend * diagonalYawSign * 0.08;
+        active.group.position.z -= recoil * 0.035 + diagonalUpBlend * 0.015;
         active.group.visible = true;
         active.flash.visible = muzzlePulse > 0.08;
         active.flash.scale.setScalar(1 + muzzlePulse * 1.16);
