@@ -9,14 +9,17 @@ export const CONFIG = {
     reverseMaxSpeed: 0.22,
     acceleration: 0.0105,
     braking: 0.03,
+    handbrakeBraking: 0.055,
     drag: 0.016,
     coastDrag: 0.006,
+    handbrakeDrag: 0.048,
 
     steerResponse: 7.5,
     steerReturn: 5.8,
     steerRate: 0.1,
     steerAtLowSpeed: 1.2,
     steerAtHighSpeed: 0.42,
+    handbrakeSteerBoost: 1.45,
     steerVisualYaw: 0.12,
     bodyRoll: 0.075,
     collisionDamping: 0.22,
@@ -171,6 +174,14 @@ export const CONFIG = {
     smokeMaxParticles: 28,
     smokeIdleRate: 4,
     smokeMoveRate: 7,
-    smokeAccelRate: 11
+    smokeAccelRate: 11,
+
+    skidMarksMax: 120,
+    skidMarkMinSpeed: 0.16,
+    skidMarkMinSteer: 0.22,
+    skidMarkWidth: 0.22,
+    skidMarkYOffset: 0.031,
+    grassSkidMarkWidth: 0.28,
+    grassSkidMarkYOffset: -0.155
   }
 };

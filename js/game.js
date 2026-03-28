@@ -592,6 +592,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   function updateDrivingInput(input, dt, turnSensitivity = 1) {
     if (gameOver) return;
     const outOfFuel = player.fuel <= 0.0001;
+    const usingHandbrake = !!input.handbrake;
     const desiredSteer =
       input.left && !input.right ? -1 : input.right && !input.left ? 1 : 0;
     const steerBlend = Math.min(
@@ -604,14 +605,27 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.steer += (desiredSteer - player.steer) * steerBlend;
     const accelStep = CONFIG.player.acceleration * dt * 60;
     const brakeStep = CONFIG.player.braking * dt * 60;
+    const handbrakeStep = (CONFIG.player.handbrakeBraking ?? (CONFIG.player.braking * 1.8)) * dt * 60;
     const coastFactor = Math.max(0, 1 - CONFIG.player.coastDrag * dt * 60);
     const dragFactor = Math.max(0, 1 - CONFIG.player.drag * dt * 60);
+    const handbrakeDragFactor = Math.max(
+      0,
+      1 - (CONFIG.player.handbrakeDrag ?? (CONFIG.player.drag * 3)) * dt * 60
+    );
 
     if (!outOfFuel && input.accelerate) {
       if (player.speed < 0) {
         player.speed += brakeStep * 0.75;
       } else {
         player.speed += accelStep;
+      }
+    } else if (usingHandbrake) {
+      if (player.speed > 0.01) {
+        player.speed = Math.max(0, player.speed - handbrakeStep);
+      } else if (player.speed < -0.01) {
+        player.speed = Math.min(0, player.speed + handbrakeStep);
+      } else {
+        player.speed = 0;
       }
     } else if (input.brake) {
       if (player.speed > 0.02) {
@@ -623,7 +637,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       player.speed *= coastFactor;
     }
 
-    if ((input.accelerate && player.speed > 0) || (input.brake && player.speed < 0)) {
+    if (usingHandbrake) {
+      player.speed *= handbrakeDragFactor;
+    } else if ((input.accelerate && player.speed > 0) || (input.brake && player.speed < 0)) {
       player.speed *= dragFactor;
     }
 
@@ -637,11 +653,15 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const steerAuthority =
       CONFIG.player.steerAtLowSpeed +
       (CONFIG.player.steerAtHighSpeed - CONFIG.player.steerAtLowSpeed) * speedRatio;
+    const steerMultiplier = usingHandbrake && speedRatio > 0.08
+      ? (CONFIG.player.handbrakeSteerBoost ?? 1.35)
+      : 1;
     const direction = player.speed < -0.001 ? -1 : 1;
     const yawStep =
       player.steer *
       CONFIG.player.steerRate *
       steerAuthority *
+      steerMultiplier *
       turnSensitivity *
       direction *
       Math.min(1, 0.25 + speedRatio);
@@ -1238,6 +1258,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const missionState = pizzaDelivery.getState();
     const fuelRatio = player.fuel / CONFIG.fuel.max;
     const inGasStation = !!gasAccess || player.isRefueling;
+    const vehicleSurface =
+      playerMode === "driving"
+        ? (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road")
+        : (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road");
     const weaponHud = weapons.getHUDState(inWeaponShopCounter);
 
     let actionPrompt = "";
@@ -1290,6 +1314,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       playerMode,
       playerPose: activePose,
       vehiclePose: player.pose,
+      vehicleSurface,
       upcomingIntersection: playerMode === "driving" ? upcomingIntersection : null,
 
       speedKmh:
@@ -1302,10 +1327,21 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           ? characterState.planarSpeed
           : Math.abs(player.speed),
 
+      steer:
+        playerMode === "driving"
+          ? player.steer
+          : 0,
+
       isBraking:
         playerMode === "driving" &&
         !gameOver &&
-        input.brake &&
+        (input.brake || input.handbrake) &&
+        Math.abs(player.speed) > 0.01,
+
+      isHandbraking:
+        playerMode === "driving" &&
+        !gameOver &&
+        !!input.handbrake &&
         Math.abs(player.speed) > 0.01,
 
       isAccelerating:

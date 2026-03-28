@@ -198,6 +198,27 @@ export function createWorld(scene) {
     return graph.evaluateSegment(segment, distanceAlongSegment, laneOffset);
   }
 
+  function distanceToNearestGridLine(value) {
+    const block = CONFIG.blockSize;
+    const wrapped = ((value % block) + block) % block;
+    return Math.min(wrapped, block - wrapped);
+  }
+
+  function getSurfaceType(x, z) {
+    const distX = distanceToNearestGridLine(x);
+    const distZ = distanceToNearestGridLine(z);
+    const roadHalf = CONFIG.roadWidth * 0.5;
+    const intersectionHalf = CONFIG.intersectionSize * 0.5;
+
+    const onVerticalRoad = distX <= roadHalf;
+    const onHorizontalRoad = distZ <= roadHalf;
+    const onIntersection = distX <= intersectionHalf && distZ <= intersectionHalf;
+
+    return onVerticalRoad || onHorizontalRoad || onIntersection
+      ? "road"
+      : "grass";
+  }
+
   function solveCircleCollision(pos, collider, radius) {
     const dx = pos.x - collider.x;
     const dz = pos.z - collider.z;
@@ -363,6 +384,7 @@ export function createWorld(scene) {
     getTrafficSpawnRoads: graph.getTrafficSpawnRoads,
 
     evaluateSegment,
+    getSurfaceType,
     buildRoadSegment: graph.buildRoadSegment,
     buildTransitionAfterRoad: graph.buildTransitionAfterRoad,
     buildRoadAfterConnector: graph.buildRoadAfterConnector,

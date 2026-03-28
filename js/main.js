@@ -609,6 +609,7 @@ function restartGame() {
       right: false,
       accelerate: false,
       brake: false,
+      handbrake: false,
       restart: false,
       interact: false,
       toggleNight: false,
@@ -635,7 +636,10 @@ function restartGame() {
   updatePlayerCarEffects(playerCar, 0, {
     nightMode: world.isNightMode(),
     speed: state.playerMode === "driving" ? state.rawSpeed : 0,
+    steer: 0,
+    surfaceType: state.vehicleSurface ?? "road",
     isBraking: false,
+    isHandbraking: false,
     isAccelerating: false,
     turnSignal: 0
   });
@@ -704,7 +708,10 @@ function animate() {
   updatePlayerCarEffects(playerCar, dt, {
     nightMode: world.isNightMode(),
     speed: state.playerMode === "driving" ? state.rawSpeed : 0,
+    steer: state.playerMode === "driving" ? state.steer : 0,
+    surfaceType: state.vehicleSurface ?? "road",
     isBraking: state.playerMode === "driving" ? state.isBraking : false,
+    isHandbraking: state.playerMode === "driving" ? state.isHandbraking : false,
     isAccelerating: state.playerMode === "driving" ? state.isAccelerating : false,
     turnSignal: state.playerMode === "driving" ? state.turnSignal : 0
   });

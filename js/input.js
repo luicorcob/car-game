@@ -4,6 +4,7 @@ export function createInput() {
     right: false,
     accelerate: false,
     brake: false,
+    handbrake: false,
     restart: false,
     interact: false,
     toggleNight: false,
@@ -32,7 +33,6 @@ export function createInput() {
     KeyR: "restart",
     KeyE: "interact",
     Enter: "interact",
-    Space: "jump",
     ShiftLeft: "sprint",
     ShiftRight: "sprint",
 
@@ -62,6 +62,12 @@ export function createInput() {
   }
 
   function setKey(code, value) {
+    if (code === "Space") {
+      input.handbrake = value;
+      input.jump = value;
+      return;
+    }
+
     const action = keyMap[code];
     if (!action) return;
     input[action] = value;
