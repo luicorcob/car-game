@@ -45,6 +45,7 @@ const HOTBAR_SLOT_COUNT = 5;
 
 const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
 const HOSTILE_NPC_SHOT = {
+  weaponSoundId: "pistol",
   visualTracerColor: 0xff8c1a,
   visualTracerThickness: 0.032,
   visualTracerLife: 0.08
@@ -183,6 +184,25 @@ function createSoundBank(soundConfig) {
   return {
     play,
     setMasterVolume
+  };
+}
+
+function createVehicleAudioController() {
+  const hornAudio = new Audio(new URL("../sounds/coche_pito.mp3", import.meta.url).href);
+  hornAudio.preload = "auto";
+  hornAudio.volume = 0.44;
+
+  function playHorn() {
+    hornAudio.pause();
+    hornAudio.currentTime = 0;
+    const playPromise = hornAudio.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  }
+
+  return {
+    playHorn
   };
 }
 
@@ -330,6 +350,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   const pizzaDelivery = createPizzaDeliveryController(world, inventory);
   const shotTracers = [];
   const weaponSounds = createSoundBank(WEAPON_SOUND_CONFIG);
+  const vehicleAudio = createVehicleAudioController();
 
   const tracerTempMid = new THREE.Vector3();
   const tracerTempDir = new THREE.Vector3();
@@ -473,6 +494,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       const start = new THREE.Vector3(npc.x, npc.y ?? 1.45, npc.z);
       const end = new THREE.Vector3(activePose.x, targetHeight, activePose.z);
       spawnShotTracer(start, end, HOSTILE_NPC_SHOT);
+      if (HOSTILE_NPC_SHOT.weaponSoundId) {
+        weaponSounds.play(HOSTILE_NPC_SHOT.weaponSoundId);
+      }
       resetHostileNpcCooldown(npc.id);
 
       const remainingHealth = damagePlayer(npcDamage);
@@ -1460,6 +1484,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.fuel = Math.max(0, player.fuel - consumption);
   }
 
+  function updateVehicleAudio(input) {
+    if (playerMode === "driving" && !gameOver && input.horn) {
+      vehicleAudio.playHorn();
+    }
+  }
+
   function updateRefuelState(dt, gasAccess = null) {
     const access = gasAccess ?? getGasStationAccess();
     const sameStationNearby =
@@ -2257,6 +2287,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       });
       shotBloom = clamp(shotBloom - dt * 3.2, 0, MAX_SHOT_BLOOM);
     }
+
+    updateVehicleAudio(input);
 
     updateShotTracers(dt);
     destruction.update(dt);

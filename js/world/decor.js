@@ -69,6 +69,25 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     ped.armRight.rotation.y = THREE.MathUtils.lerp(ped.armRight.rotation.y, 0, strength);
   }
 
+  function chasePlayer(ped, playerPose, dt, playerDistance) {
+    if (!playerPose || !Number.isFinite(playerDistance) || playerDistance <= 0.001) return;
+
+    const stopDistance = Math.max(2.8, (CONFIG.npc.attackRange ?? 16) * 0.7);
+    if (playerDistance <= stopDistance) return;
+
+    const dx = playerPose.x - ped.group.position.x;
+    const dz = playerPose.z - ped.group.position.z;
+    const length = Math.hypot(dx, dz);
+    if (length <= 0.001) return;
+
+    const chaseSpeed = CONFIG.npc.chaseSpeed ?? 4.2;
+    const step = Math.min(length - stopDistance, chaseSpeed * dt);
+    if (step <= 0) return;
+
+    ped.group.position.x += (dx / length) * step;
+    ped.group.position.z += (dz / length) * step;
+  }
+
   function isReserved(x, z, padding = 0) {
     if (!hooks.isReservedArea) return false;
     return hooks.isReservedArea(x, z, padding);
@@ -658,6 +677,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
         (ped.alert > 0.05 || playerDistance <= forgetDistance)
       ) {
         applyPedestrianAlertPose(ped, playerPose.x, playerPose.z, ped.alert || 1);
+        chasePlayer(ped, playerPose, simDt, playerDistance);
         ped.group.position.y = 0;
         continue;
       }
@@ -708,6 +728,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
       if (ped.hostile && ped.alert > 0.05 && playerPose) {
         applyPedestrianAlertPose(ped, playerPose.x, playerPose.z, ped.alert);
+        chasePlayer(ped, playerPose, dt, playerDistance);
       } else {
         ped.group.rotation.y = THREE.MathUtils.lerp(
           ped.group.rotation.y,

@@ -1313,6 +1313,7 @@ function clearMomentaryInputs() {
   input.selectWeapon1 = false;
   input.selectWeapon2 = false;
   input.selectWeapon3 = false;
+  input.horn = false;
 }
 
 function updateOverlayVisibility() {
@@ -1420,6 +1421,7 @@ function restartGame() {
       jump: false,
       sprint: false,
       debugDamage: false,
+      horn: false,
       crouch: false,
       fire: false,
       aim: false,
@@ -1491,6 +1493,7 @@ function animate() {
     input.toggleFirstPerson = false;
     input.togglePhone = false;
     input.toggleInventory = false;
+    input.horn = false;
     editor.update(dt);
     renderer.render(scene, camera);
     return;
@@ -1510,6 +1513,7 @@ function animate() {
     input.toggleNight = false;
     input.toggleFirstPerson = false;
     input.togglePhone = false;
+    input.horn = false;
     clearMomentaryInputs();
     const idleState = game.update(input, 0, cameraController.getWalkingControlContext());
     updateUI(idleState);
@@ -1585,6 +1589,7 @@ function animate() {
   const state = game.update(frameInput, dt, controlContext);
   latestGameState = state;
   lastPlayerMode = state.playerMode;
+  input.horn = false;
 
   if (state.playerMode !== "walking" && inventoryMenuOpen) {
     inventoryMenuOpen = false;

@@ -13,6 +13,7 @@ export function createInput() {
     jump: false,
     sprint: false,
     debugDamage: false,
+    horn: false,
 
     fire: false,
     aim: false,
@@ -106,6 +107,13 @@ export function createInput() {
       return;
     }
 
+    if (event.code === "KeyH") {
+      if (!event.repeat) {
+        input.horn = true;
+      }
+      return;
+    }
+
     if (event.code === "KeyP") {
       if (!event.repeat) {
         input.togglePhone = true;}}
@@ -121,7 +129,13 @@ export function createInput() {
 
   window.addEventListener("keyup", (event) => {
 
-    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyI" || event.code === "KeyP") return;
+    if (
+      event.code === "KeyN" ||
+      event.code === "KeyV" ||
+      event.code === "KeyI" ||
+      event.code === "KeyP" ||
+      event.code === "KeyH"
+    ) return;
 
 
 

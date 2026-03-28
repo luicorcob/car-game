@@ -124,6 +124,28 @@ function createSharedMaterials() {
       emissive: 0xfff2a8,
       emissiveIntensity: 0.34,
       roughness: 0.18
+    }),
+    hostileNpcShirt: new THREE.MeshStandardMaterial({
+      color: 0xdc2626,
+      roughness: 0.8
+    }),
+    hostileNpcSkin: new THREE.MeshStandardMaterial({
+      color: 0x8d5524,
+      roughness: 0.88
+    }),
+    hostileNpcPants: new THREE.MeshStandardMaterial({
+      color: 0x33415c,
+      roughness: 0.84
+    }),
+    hostileNpcWeapon: new THREE.MeshStandardMaterial({
+      color: 0x18181b,
+      roughness: 0.55
+    }),
+    hostileNpcBand: new THREE.MeshStandardMaterial({
+      color: 0xff3b30,
+      emissive: 0x6a120b,
+      emissiveIntensity: 0.42,
+      roughness: 0.42
     })
   };
 }
@@ -326,6 +348,71 @@ function createLampPiece(materials) {
   return group;
 }
 
+function createHostileNpcPiece(materials) {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(4.8, 8, 2.6),
+    materials.hostileNpcShirt
+  );
+  body.position.y = 12.5;
+  group.add(body);
+
+  const chestBand = new THREE.Mesh(
+    new THREE.BoxGeometry(5, 1.6, 2.8),
+    materials.hostileNpcBand
+  );
+  chestBand.position.set(0, 12.2, 0.1);
+  group.add(chestBand);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(2.2, 14, 14),
+    materials.hostileNpcSkin
+  );
+  head.position.y = 18.5;
+  group.add(head);
+
+  const armLeft = new THREE.Mesh(
+    new THREE.BoxGeometry(1.4, 7, 1.4),
+    materials.hostileNpcShirt
+  );
+  armLeft.position.set(-3.5, 12, 0);
+  armLeft.rotation.z = 0.08;
+  group.add(armLeft);
+
+  const armRight = new THREE.Mesh(
+    new THREE.BoxGeometry(1.4, 7, 1.4),
+    materials.hostileNpcShirt
+  );
+  armRight.position.set(3.5, 12.2, -0.2);
+  armRight.rotation.z = -0.18;
+  armRight.rotation.x = -0.55;
+  group.add(armRight);
+
+  const legLeft = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 7.8, 1.6),
+    materials.hostileNpcPants
+  );
+  legLeft.position.set(-1.2, 4.5, 0);
+  group.add(legLeft);
+
+  const legRight = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 7.8, 1.6),
+    materials.hostileNpcPants
+  );
+  legRight.position.set(1.2, 4.5, 0);
+  group.add(legRight);
+
+  const weapon = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1.4, 4.2),
+    materials.hostileNpcWeapon
+  );
+  weapon.position.set(4.2, 9.6, -1.8);
+  group.add(weapon);
+
+  return group;
+}
+
 function createPrimitivePiece(type, materials) {
   if (type === "road") return createRoadPiece(materials);
   if (type === "crossroad") return createCrossroadPiece(materials);
@@ -333,6 +420,7 @@ function createPrimitivePiece(type, materials) {
   if (type === "tree") return createTreePiece(materials);
   if (type === "house") return createHousePiece(materials);
   if (type === "lamp") return createLampPiece(materials);
+  if (type === "hostile-npc") return createHostileNpcPiece(materials);
   return new THREE.Group();
 }
 
