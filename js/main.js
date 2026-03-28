@@ -16,6 +16,7 @@ import {
   resetPlayerCharacterVisual
 } from "./player/characterVisual.js";
 import { createGame } from "./game.js";
+import { getWeaponAttributes } from "./combat/weaponAttributes.js";
 
 const canvas = document.querySelector("#game");
 const speedEl = document.querySelector("#speed");
@@ -62,6 +63,8 @@ const inventoryMenuSummaryEl = document.querySelector("#inventory-menu-summary")
 const inventoryMenuGridEl = document.querySelector("#inventory-menu-grid");
 const crosshairEl = document.querySelector("#crosshair");
 const crosshairRingEl = document.querySelector(".crosshair-ring");
+const sniperScopeEl = document.querySelector("#sniper-scope");
+const sniperScopeZoomEl = document.querySelector("#sniper-scope-zoom");
 
 const promptEl = document.querySelector("#prompt");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
@@ -105,6 +108,40 @@ let inventoryMenuOpen = false;
 let lastPlayerMode = "driving";
 let draggedInventorySlotIndex = null;
 let crosshairAnimTime = 0;
+let latestGameState = null;
+const SNIPER_SCOPE_ZOOM_STEPS = [1, 0.78, 0.58, 0.42];
+let sniperScopeZoomIndex = 0;
+let sniperScopeForcedFirstPerson = false;
+
+function isSniperScopeActive(state) {
+  const weaponId = state.weaponHud?.equippedId ?? null;
+  const weaponAttributes = getWeaponAttributes(weaponId);
+  const aimBlend = state.characterState?.aimBlend ?? 0;
+  return (
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !state.gameOver &&
+    state.playerMode === "walking" &&
+    state.weaponHud?.hasEquippedWeapon &&
+    state.inventoryHud?.activeItemKind === "weapon" &&
+    !!weaponAttributes?.useScopeOverlay &&
+    aimBlend > 0.08
+  );
+}
+
+function getSniperScopeFov(state) {
+  const weaponId = state.weaponHud?.equippedId ?? null;
+  const weaponAttributes = getWeaponAttributes(weaponId);
+  const baseFov = weaponAttributes?.scopeFov ?? 22;
+  const zoomStep = SNIPER_SCOPE_ZOOM_STEPS[sniperScopeZoomIndex] ?? 1;
+  return baseFov * zoomStep;
+}
+
+function getSniperScopeZoomLabel(state) {
+  const fov = getSniperScopeFov(state);
+  const zoom = 68 / Math.max(1, fov);
+  return `x${zoom.toFixed(1)}`;
+}
 
 function normalizeAngle(angle) {
   let a = angle;
@@ -341,6 +378,22 @@ function setupCameraSettingsPanel() {
   });
 }
 
+window.addEventListener("wheel", (event) => {
+  const state = latestGameState;
+  if (!state || !isSniperScopeActive(state)) return;
+
+  if (event.deltaY > 0.01) {
+    sniperScopeZoomIndex = Math.max(0, sniperScopeZoomIndex - 1);
+  } else if (event.deltaY < -0.01) {
+    sniperScopeZoomIndex = Math.min(
+      SNIPER_SCOPE_ZOOM_STEPS.length - 1,
+      sniperScopeZoomIndex + 1
+    );
+  }
+
+  event.preventDefault();
+}, { passive: false });
+
 const minimapRoadLines = [];
 
 function worldToMap(x, z, originX = 0, originZ = 0, heading = 0) {
@@ -497,29 +550,48 @@ function updatePrompt(state) {
 }
 
 function updateCrosshair(state) {
+  const sniperScopeActive = isSniperScopeActive(state);
   const shouldShow =
     !inventoryMenuOpen &&
     !editor.isActive() &&
     !state.gameOver &&
     state.playerMode === "walking" &&
     state.weaponHud.hasEquippedWeapon &&
-    state.inventoryHud.activeItemKind === "weapon";
+    state.inventoryHud.activeItemKind === "weapon" &&
+    !sniperScopeActive;
 
   crosshairEl.classList.toggle("hidden", !shouldShow);
-  document.body.style.cursor = shouldShow ? "none" : "";
+  document.body.style.cursor = shouldShow || sniperScopeActive ? "none" : "";
   if (!shouldShow) return;
 
   const aimBlend = state.characterState?.aimBlend ?? 0;
+  const crouchBlend = THREE.MathUtils.clamp(
+    state.characterState?.crouchBlend ?? 0,
+    0,
+    1
+  );
   const speedNorm = Math.min(
     1,
     (state.characterState?.planarSpeed ?? 0) / CONFIG.onFoot.runSpeed
   );
   const sprintFactor = THREE.MathUtils.clamp((speedNorm - 0.58) / 0.42, 0, 1);
-  const swayAmp = (0.8 + speedNorm * 2.1 + sprintFactor * 1.8) * (1 - aimBlend * 0.78);
+  const swayAmp =
+    (0.8 + speedNorm * 2.1 + sprintFactor * 1.8) *
+    (1 - aimBlend * 0.78) *
+    THREE.MathUtils.lerp(1, 0.6, crouchBlend);
   const offsetX = Math.sin(crosshairAnimTime * 5.2) * swayAmp * 0.32;
   const offsetY = Math.abs(Math.sin(crosshairAnimTime * 10.4)) * swayAmp;
-  const baseSpread = THREE.MathUtils.lerp(18, 11, aimBlend) + speedNorm * 12 + sprintFactor * 5;
-  let edgePenalty = 0;
+  const weaponId = state.weaponHud?.equippedId ?? "pistol";
+  const spreadRadius = Math.max(0, state.characterState?.shotSpread ?? 0);
+  const shotBloom = THREE.MathUtils.clamp(
+    state.characterState?.shotBloom ?? 0,
+    0,
+    1.6
+  );
+  const weaponAttributes = getWeaponAttributes(weaponId);
+  const baseVisualSpread =
+    spreadRadius * (weaponAttributes?.crosshairPxScale ?? 520);
+  let spread = baseVisualSpread * 1.18 + 6 + shotBloom * 11;
 
   if (!cameraController.isFirstPerson()) {
     const edgePressure = THREE.MathUtils.clamp(
@@ -527,10 +599,10 @@ function updateCrosshair(state) {
       0,
       1
     );
-    edgePenalty = edgePressure * 16;
+    spread += edgePressure * 6;
   }
 
-  const spread = baseSpread + edgePenalty;
+  spread = THREE.MathUtils.lerp(spread, 4.5, aimBlend * crouchBlend * (1 - shotBloom * 0.45));
   const cursor = cameraController.getCursorScreenPosition();
   const crosshairOffsetX = cameraController.isFirstPerson()
     ? offsetX
@@ -543,6 +615,19 @@ function updateCrosshair(state) {
   crosshairEl.style.setProperty("--crosshair-y", `${crosshairOffsetY.toFixed(2)}px`);
   crosshairEl.style.setProperty("--crosshair-scale", `${(1 - aimBlend * 0.08).toFixed(3)}`);
   crosshairRingEl?.style.setProperty("--crosshair-size", `${spread.toFixed(2)}px`);
+}
+
+function updateSniperScope(state) {
+  const active = isSniperScopeActive(state);
+  sniperScopeEl?.classList.toggle("hidden", !active);
+  sniperScopeEl?.classList.toggle("active", active);
+  if (sniperScopeZoomEl) {
+    sniperScopeZoomEl.textContent = getSniperScopeZoomLabel(state);
+  }
+  settingsToggleEl.classList.toggle("hidden", active);
+  if (active) {
+    cameraSettingsPanelEl.classList.add("hidden");
+  }
 }
 
 function updateFuelUI(state) {
@@ -600,6 +685,7 @@ function updateWeaponUI(state) {
 
   weaponCardEl.classList.toggle("armed", weapon.hasEquippedWeapon);
   weaponCardEl.classList.toggle("shop", weapon.inShop);
+  updateSniperScope(state);
 }
 
 function legacyUpdateInventoryUIEntries(state) {
@@ -914,6 +1000,7 @@ function restartGame() {
     0,
     null
   );
+  latestGameState = state;
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, 0);
   world.updateChoiceSigns(
@@ -992,6 +1079,22 @@ function animate() {
     !!input.aim
   );
 
+  const wantsSniperScope =
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !!input.aim &&
+    latestGameState?.playerMode === "walking" &&
+    latestGameState?.inventoryHud?.activeItemKind === "weapon" &&
+    latestGameState?.weaponHud?.equippedId === "francotirador";
+
+  if (wantsSniperScope && !cameraController.isFirstPerson()) {
+    cameraController.setFirstPerson(true);
+    sniperScopeForcedFirstPerson = true;
+  } else if (!wantsSniperScope && sniperScopeForcedFirstPerson) {
+    cameraController.setFirstPerson(false);
+    sniperScopeForcedFirstPerson = false;
+  }
+
   if (input.restart) {
     restartGame();
     input.restart = false;
@@ -1017,6 +1120,7 @@ function animate() {
       }
     : input;
   const state = game.update(frameInput, dt, controlContext);
+  latestGameState = state;
   lastPlayerMode = state.playerMode;
 
   if (state.playerMode !== "walking" && inventoryMenuOpen) {
@@ -1049,10 +1153,14 @@ function animate() {
 
   cameraController.update(state, dt, playerCar, playerCharacter, false);
   const walkingAimBlend = state.characterState?.aimBlend ?? 0;
+  const activeWeaponAttributes = getWeaponAttributes(state.weaponHud?.equippedId ?? null);
+  const sniperScopeActive = isSniperScopeActive(state);
   const targetFov = state.playerMode === "walking"
-    ? cameraController.isFirstPerson()
-      ? THREE.MathUtils.lerp(68, 57, walkingAimBlend)
-      : THREE.MathUtils.lerp(68, 40, walkingAimBlend)
+    ? sniperScopeActive
+      ? getSniperScopeFov(state)
+      : cameraController.isFirstPerson()
+        ? THREE.MathUtils.lerp(68, 57, walkingAimBlend)
+        : THREE.MathUtils.lerp(68, 40, walkingAimBlend)
     : 68;
   camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 12, dt);
   camera.updateProjectionMatrix();

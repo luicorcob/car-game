@@ -55,6 +55,9 @@ export function createCameraController(camera, lookTarget, options = {}) {
   let mousePitch = 0;
   let aimDownSights = false;
   let aimBlend = 0;
+  let shotCameraKick = 0;
+  let shotCameraLift = 0;
+  let prevWeaponPulse = 0;
 
   const mouseScreen = new THREE.Vector2(
     window.innerWidth * 0.5,
@@ -301,11 +304,20 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
       return {
         cameraX: state.playerPose.x + backX + sideX,
-        cameraY: CONFIG.camera.walkHeight - crouchCameraDrop + (state.characterState?.jumpOffset ?? 0) * 0.18,
-        cameraZ: state.playerPose.z + backZ + sideZ,
+        cameraY:
+          CONFIG.camera.walkHeight -
+          crouchCameraDrop +
+          (state.characterState?.jumpOffset ?? 0) * 0.18 +
+          shotCameraLift * 0.12,
+        cameraZ: state.playerPose.z + backZ + sideZ + shotCameraKick * 0.18,
 
         lookX: state.playerPose.x + Math.sin(heading) * CONFIG.camera.walkLookAhead,
-        lookY: CONFIG.camera.walkLookHeight - crouchLookDrop + (state.characterState?.jumpOffset ?? 0) * 0.35,
+        lookY:
+          CONFIG.camera.walkLookHeight -
+          crouchLookDrop +
+          (state.characterState?.jumpOffset ?? 0) * 0.35 +
+          shotCameraKick * 0.72 +
+          shotCameraLift * 0.24,
         lookZ: state.playerPose.z - Math.cos(heading) * CONFIG.camera.walkLookAhead,
 
         firstPerson: false
@@ -413,6 +425,10 @@ export function createCameraController(camera, lookTarget, options = {}) {
       tempPose.y -= aimBlend * 0.012;
       tempLook.copy(tempPose).addScaledVector(tempDirection, distance);
     }
+
+    tempPose.addScaledVector(tempDirection, -shotCameraKick * 0.045);
+    tempPose.y += shotCameraLift * 0.08;
+    tempLook.y += shotCameraKick * 0.65 + shotCameraLift * 0.42;
 
     return {
       cameraX: tempPose.x,
@@ -580,6 +596,36 @@ export function createCameraController(camera, lookTarget, options = {}) {
       ? targetAimBlend
       : THREE.MathUtils.damp(aimBlend, targetAimBlend, 14, dt);
 
+    const weaponState = state.characterState?.weapon;
+    const muzzlePulse = weaponState?.muzzlePulse ?? 0;
+    const pulseRise = Math.max(0, muzzlePulse - prevWeaponPulse);
+
+    if (state.playerMode === "walking" && pulseRise > 0.001) {
+      shotCameraKick = clamp(
+        shotCameraKick + pulseRise * ((weaponState?.cameraKick ?? 0.08) * 1.55),
+        0,
+        0.42
+      );
+      shotCameraLift = clamp(
+        shotCameraLift + pulseRise * ((weaponState?.cameraLift ?? 0.03) * 1.8),
+        0,
+        0.26
+      );
+
+      if (firstPerson && weaponState?.recoilClimb) {
+        const pitchLimits = getModePitchLimits(state.playerMode);
+        mousePitch = clamp(
+          mousePitch + pulseRise * (weaponState?.recoilClimb ?? 0.02),
+          pitchLimits.min,
+          pitchLimits.max
+        );
+      }
+    }
+
+    prevWeaponPulse = muzzlePulse;
+    shotCameraKick = THREE.MathUtils.damp(shotCameraKick, 0, 10, dt);
+    shotCameraLift = THREE.MathUtils.damp(shotCameraLift, 0, 7.5, dt);
+
     const enableCarFP = firstPerson && state.playerMode === "driving";
     const enableCharacterFP = firstPerson && state.playerMode === "walking";
 
@@ -612,6 +658,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
         aiming: false,
         aimBlend: 0,
         aimDirection: null,
+        aimRayOrigin: null,
         cursorEdgePressure: 0,
         faceAim: false,
         faceHeading: null,
@@ -628,6 +675,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
         aiming: false,
         aimBlend: 0,
         aimDirection: null,
+        aimRayOrigin: null,
         cursorEdgePressure: 0,
         faceAim: false,
         faceHeading: null,
@@ -664,6 +712,11 @@ export function createCameraController(camera, lookTarget, options = {}) {
           y: tempAimDirection.y,
           z: tempAimDirection.z
         },
+        aimRayOrigin: {
+          x: raycaster.ray.origin.x,
+          y: raycaster.ray.origin.y,
+          z: raycaster.ray.origin.z
+        },
         cursorEdgePressure: getThirdPersonCursorEdgePressure(),
         faceAim: false,
         faceHeading: null,
@@ -688,6 +741,11 @@ export function createCameraController(camera, lookTarget, options = {}) {
         x: tempAimDirection.x,
         y: tempAimDirection.y,
         z: tempAimDirection.z
+      },
+      aimRayOrigin: {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z
       },
       cursorEdgePressure: 0,
       faceAim: false,

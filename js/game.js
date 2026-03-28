@@ -10,6 +10,7 @@ import { getPlayerCharacterWeaponMuzzlePose } from "./player/characterVisual.js"
 import { createDestructionController } from "./effects/destruction.js";
 import { createPizzaDeliveryController } from "./missions/pizzaDelivery.js";
 import { createWeaponController } from "./combat/weapons.js";
+import { getWeaponAttributes } from "./combat/weaponAttributes.js";
 
 const TRAFFIC_COLORS = [
   0x3366ff,
@@ -245,6 +246,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let activeRefuelStationId = null;
   let selectedHotbarSlot = 0;
   let inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
+  let shotBloom = 0;
+  const MAX_SHOT_BLOOM = 1.6;
 
   function clearShotTracers() {
     while (shotTracers.length) {
@@ -429,6 +432,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     weapons.reset();
     weapons.grantWeapon("pistol", null, { equip: true });
     weapons.grantWeapon("shotgun");
+    weapons.grantWeapon("fusil");
+    weapons.grantWeapon("francotirador");
 
     player.segment = world.getStartRoad();
     player.segmentS = 0;
@@ -466,6 +471,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     characterDestroyed = false;
     selectedHotbarSlot = 0;
     inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
+    inventorySlotItemIds[0] = "pistol";
+    inventorySlotItemIds[1] = "shotgun";
+    inventorySlotItemIds[2] = "fusil";
+    inventorySlotItemIds[3] = "francotirador";
+    shotBloom = 0;
 
     spawnTraffic();
   }
@@ -1359,31 +1369,26 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       typeof aimControl?.aimDirection?.x === "number" &&
       typeof aimControl?.aimDirection?.y === "number" &&
       typeof aimControl?.aimDirection?.z === "number";
+    const hasAimRayOrigin =
+      typeof aimControl?.aimRayOrigin?.x === "number" &&
+      typeof aimControl?.aimRayOrigin?.y === "number" &&
+      typeof aimControl?.aimRayOrigin?.z === "number";
     const aimHeading = typeof aimControl?.aimHeading === "number"
       ? aimControl.aimHeading
       : characterState.heading;
-    const aimBlend = typeof aimControl?.aimBlend === "number"
-      ? aimControl.aimBlend
-      : 0;
-    const planarSpeed = characterState.planarSpeed ?? 0;
-    const moveFactor = Math.min(1.35, planarSpeed / CONFIG.onFoot.runSpeed);
-    const aimingMultiplier = THREE.MathUtils.lerp(1, 0.24, aimBlend);
-    const thirdPersonEdgePenalty = !aimControl?.firstPerson
-      ? clamp(aimControl?.cursorEdgePressure ?? 0, 0, 1)
-      : 0;
-    const spreadByWeapon = {
-      pistol: 0.026,
-      shotgun: 0.08,
-      rifle: 0.03
-    };
-    const baseSpread =
-      (spreadByWeapon[shot?.weaponId] ?? 0.028) *
-      (1 + moveFactor * 0.95) *
-      aimingMultiplier *
-      (1 + thirdPersonEdgePenalty * 1.5);
-    const spreadX = (Math.random() * 2 - 1) * baseSpread;
-    const spreadY = (Math.random() * 2 - 1) * baseSpread;
+    const spreadProfile = getShotSpreadProfile(shot, characterState, aimControl);
+    const spreadRadius = Math.sqrt(Math.random()) * spreadProfile.maxRadius;
+    const spreadAngle = Math.random() * Math.PI * 2;
+    const spreadX = Math.cos(spreadAngle) * spreadRadius;
+    const spreadY = Math.sin(spreadAngle) * spreadRadius;
     const muzzlePose = getPlayerCharacterWeaponMuzzlePose(playerCharacter);
+    const aimRayOrigin = hasAimRayOrigin
+      ? new THREE.Vector3(
+          aimControl.aimRayOrigin.x,
+          aimControl.aimRayOrigin.y,
+          aimControl.aimRayOrigin.z
+        )
+      : null;
 
     function withSpread(direction) {
       const forward = direction.clone().normalize();
@@ -1400,6 +1405,46 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         .normalize();
     }
 
+    function buildAimTrace(tracerForward3D) {
+      const flatForward = new THREE.Vector3(
+        tracerForward3D.x,
+        0,
+        tracerForward3D.z
+      );
+
+      if (flatForward.lengthSq() <= 0.0001) {
+        return null;
+      }
+
+      flatForward.normalize();
+
+      const aimStart = aimRayOrigin ?? (
+        muzzlePose
+          ? new THREE.Vector3(
+              muzzlePose.position.x,
+              muzzlePose.position.y,
+              muzzlePose.position.z
+            )
+          : new THREE.Vector3(
+              characterState.x + Math.sin(aimHeading) * 0.72,
+              1.46 + (characterState.jumpOffset ?? 0),
+              characterState.z - Math.cos(aimHeading) * 0.72
+            )
+      );
+
+      return {
+        aimStart,
+        aimOrigin2D: {
+          x: aimStart.x,
+          z: aimStart.z
+        },
+        aimForwardX: flatForward.x,
+        aimForwardZ: flatForward.z,
+        aimRightX: -flatForward.z,
+        aimRightZ: flatForward.x
+      };
+    }
+
     if (muzzlePose) {
       const tracerForward3D = hasAimDirection
         ? withSpread(new THREE.Vector3(
@@ -1408,30 +1453,22 @@ export function createGame(scene, playerCar, playerCharacter, world) {
             aimControl.aimDirection.z
           ))
         : withSpread(muzzlePose.forward.clone());
-      const flatForward = new THREE.Vector3(
-        tracerForward3D.x,
-        0,
-        tracerForward3D.z
-      );
+      const aimTrace = buildAimTrace(tracerForward3D);
 
-      if (flatForward.lengthSq() > 0.0001) {
-        flatForward.normalize();
-
+      if (aimTrace) {
         return {
-          origin2D: {
-            x: muzzlePose.position.x,
-            z: muzzlePose.position.z
-          },
+          origin2D: aimTrace.aimOrigin2D,
           start3D: new THREE.Vector3(
             muzzlePose.position.x,
             muzzlePose.position.y,
             muzzlePose.position.z
           ),
-          forwardX: flatForward.x,
-          forwardZ: flatForward.z,
-          rightX: -flatForward.z,
-          rightZ: flatForward.x,
-          tracerForward3D
+          forwardX: aimTrace.aimForwardX,
+          forwardZ: aimTrace.aimForwardZ,
+          rightX: aimTrace.aimRightX,
+          rightZ: aimTrace.aimRightZ,
+          tracerForward3D,
+          aimStart: aimTrace.aimStart
         };
       }
     }
@@ -1445,6 +1482,20 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           aimControl.aimDirection.z
         ))
       : withSpread(new THREE.Vector3(forwardX, 0, forwardZ));
+    const aimTrace = buildAimTrace(tracerForward3D);
+
+    if (aimTrace) {
+      return {
+        origin2D: aimTrace.aimOrigin2D,
+        start3D: aimTrace.aimStart.clone(),
+        forwardX: aimTrace.aimForwardX,
+        forwardZ: aimTrace.aimForwardZ,
+        rightX: aimTrace.aimRightX,
+        rightZ: aimTrace.aimRightZ,
+        tracerForward3D,
+        aimStart: aimTrace.aimStart
+      };
+    }
 
     return {
       origin2D: {
@@ -1460,7 +1511,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       forwardZ,
       rightX: -forwardZ,
       rightZ: forwardX,
-      tracerForward3D
+      tracerForward3D,
+      aimStart: new THREE.Vector3(
+        characterState.x + forwardX * 0.72,
+        1.46 + (characterState.jumpOffset ?? 0),
+        characterState.z + forwardZ * 0.72
+      )
     };
   }
 
@@ -1473,7 +1529,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       forwardZ,
       rightX,
       rightZ,
-      tracerForward3D
+      tracerForward3D,
+      aimStart
     } = shotPose;
 
     let bestHit = null;
@@ -1534,12 +1591,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       ? Math.min(bestHit.forward, shot.range)
       : shot.range;
 
-    const tracerEnd = start3D.clone().addScaledVector(
+    const tracerTarget = aimStart.clone().addScaledVector(
       tracerForward3D,
       Math.max(0.2, visibleDistance)
     );
 
-    spawnShotTracer(start3D, tracerEnd, shot);
+    spawnShotTracer(start3D, tracerTarget, shot);
 
     if (!bestHit) return;
 
@@ -1554,6 +1611,82 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       bestHit.lateral,
       bestHit.pose
     );
+  }
+
+  function getShotSpreadProfile(shot, characterState, aimControl = null) {
+    const aimBlend = typeof aimControl?.aimBlend === "number"
+      ? clamp(aimControl.aimBlend, 0, 1)
+      : 0;
+    const crouchBlend = clamp(characterState?.crouchBlend ?? 0, 0, 1);
+    const planarSpeed = Math.max(0, characterState?.planarSpeed ?? 0);
+    const moveFactor = Math.min(1.4, planarSpeed / CONFIG.onFoot.runSpeed);
+    const edgePenalty = !aimControl?.firstPerson
+      ? clamp(aimControl?.cursorEdgePressure ?? 0, 0, 1)
+      : 0;
+    const weapon = getWeaponAttributes(shot?.weaponId);
+    const baseRadius = weapon?.spreadBaseRadius ?? 0.025;
+    const bloomRadius = weapon?.spreadBloomRadius ?? 0.026;
+    const hipFireMultiplier = weapon?.hipFireMultiplier ?? 1;
+    const aimedSpreadMultiplier = weapon?.aimedSpreadMultiplier ?? 1;
+    const movementMultiplier = 1 + moveFactor * 1.05;
+    const crouchMultiplier = THREE.MathUtils.lerp(1, 0.64, crouchBlend);
+    const aimMultiplier = THREE.MathUtils.lerp(1, 0.3, aimBlend);
+    const weaponAimTuningMultiplier = THREE.MathUtils.lerp(
+      hipFireMultiplier,
+      aimedSpreadMultiplier,
+      aimBlend
+    );
+    const edgeMultiplier = 1 + edgePenalty * 1.25;
+    const focusBlend = aimBlend * crouchBlend;
+    const focusMultiplier = THREE.MathUtils.lerp(1, 0.12, focusBlend);
+    const isLockedFocus =
+      focusBlend > 0.9 &&
+      planarSpeed < CONFIG.onFoot.walkSpeed * 0.14;
+    const bloomMultiplier = 1 + shotBloom * bloomRadius;
+
+    const maxRadius = isLockedFocus
+      ? 0
+      : baseRadius *
+        movementMultiplier *
+        crouchMultiplier *
+        aimMultiplier *
+        weaponAimTuningMultiplier *
+        focusMultiplier *
+        bloomMultiplier *
+        edgeMultiplier;
+
+    return {
+      maxRadius,
+      edgePenalty,
+      moveFactor,
+      aimBlend,
+      crouchBlend,
+      bloom: shotBloom
+    };
+  }
+
+  function applyShotBloom(shot) {
+    const weapon = getWeaponAttributes(shot?.weaponId);
+    shotBloom = clamp(
+      shotBloom + (weapon?.bloomKick ?? 0.22),
+      0,
+      MAX_SHOT_BLOOM
+    );
+  }
+
+  function recoverShotBloom(dt, characterState, controlContext = null) {
+    const aimBlend = clamp(controlContext?.aimBlend ?? 0, 0, 1);
+    const crouchBlend = clamp(characterState?.crouchBlend ?? 0, 0, 1);
+    const moveFactor = Math.min(
+      1,
+      Math.max(0, characterState?.planarSpeed ?? 0) / CONFIG.onFoot.runSpeed
+    );
+    const recoverySpeed =
+      THREE.MathUtils.lerp(1.9, 4.7, aimBlend) *
+      THREE.MathUtils.lerp(1, 1.35, crouchBlend) *
+      THREE.MathUtils.lerp(1, 0.72, moveFactor);
+
+    shotBloom = clamp(shotBloom - dt * recoverySpeed, 0, MAX_SHOT_BLOOM);
   }
 
   function getTurnSignal(upcomingIntersection) {
@@ -1655,8 +1788,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         });
 
         if (shot) {
+          applyShotBloom(shot);
           fireWeapon(shot, characterStateNow, controlContext);
         }
+
+        recoverShotBloom(dt, characterStateNow, controlContext);
       }
 
       if (!gameOver) {
@@ -1673,12 +1809,19 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         playerMode,
         inShop: false
       });
+      shotBloom = clamp(shotBloom - dt * 3.2, 0, MAX_SHOT_BLOOM);
     }
 
     updateShotTracers(dt);
     destruction.update(dt);
 
     const characterState = character.getState();
+    const weaponHud = weapons.getHUDState(inWeaponShopCounter);
+    const shotSpreadProfile = getShotSpreadProfile(
+      { weaponId: weaponHud?.equippedId },
+      characterState,
+      controlContext
+    );
     const missionState = pizzaDelivery.getState();
     const fuelRatio = player.fuel / CONFIG.fuel.max;
     const inGasStation = !!gasAccess || player.isRefueling;
@@ -1686,7 +1829,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       playerMode === "driving"
         ? (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road")
         : (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road");
-    const weaponHud = weapons.getHUDState(inWeaponShopCounter);
     const inventorySlots = buildInventorySlots();
     const portableFuelLiters = inventory.fuelCans * inventory.fuelPerCan;
     const hotbarState = getSelectedHotbarItem();
@@ -1847,6 +1989,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         aimBlend: typeof controlContext?.aimBlend === "number"
           ? controlContext.aimBlend
           : 0,
+        shotSpread: shotSpreadProfile.maxRadius,
+        shotSpreadMoveFactor: shotSpreadProfile.moveFactor,
+        shotSpreadCrouchBlend: shotSpreadProfile.crouchBlend,
+        shotSpreadEdgePenalty: shotSpreadProfile.edgePenalty,
+        shotBloom: shotSpreadProfile.bloom,
         cursorEdgePressure: typeof controlContext?.cursorEdgePressure === "number"
           ? controlContext.cursorEdgePressure
           : 0,

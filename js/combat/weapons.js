@@ -1,57 +1,6 @@
-const WEAPON_CATALOG = [
-  {
-    id: "pistol",
-    label: "Pistola 9mm",
-    shortLabel: "Pistola",
-    price: 60,
-    starterAmmo: 18,
-    ammoPack: 24,
-    ammoPrice: 18,
-    fireInterval: 0.24,
-    range: 170,
-    hitRadius: 0.9,
-    automatic: false,
-    visualTracerLength: 8.5,
-    visualTracerThickness: 0.022,
-    visualTracerColor: 0xffefb0,
-    visualTracerLife: 0.05
-  },
-  {
-    id: "shotgun",
-    label: "Escopeta táctica",
-    shortLabel: "Escopeta",
-    price: 140,
-    starterAmmo: 12,
-    ammoPack: 16,
-    ammoPrice: 28,
-    fireInterval: 0.62,
-    range: 88,
-    hitRadius: 1.6,
-    automatic: false,
-    visualTracerLength: 6.8,
-    visualTracerThickness: 0.034,
-    visualTracerColor: 0xffd38a,
-    visualTracerLife: 0.06
-  },
-  {
-    id: "rifle",
-    label: "Rifle de asalto",
-    shortLabel: "Rifle",
-    price: 220,
-    starterAmmo: 30,
-    ammoPack: 36,
-    ammoPrice: 42,
-    fireInterval: 0.1,
-    range: 240,
-    hitRadius: 0.95,
-    automatic: true,
-    visualTracerLength: 10.5,
-    visualTracerThickness: 0.018,
-    visualTracerColor: 0xfff6cb,
-    visualTracerLife: 0.04
-  }
-];
+import { WEAPON_ATTRIBUTES, getWeaponAttributes } from "./weaponAttributes.js";
 
+const WEAPON_CATALOG = WEAPON_ATTRIBUTES;
 const CATALOG_BY_ID = new Map(WEAPON_CATALOG.map((w) => [w.id, w]));
 
 function clampIndex(index, length) {
@@ -143,17 +92,6 @@ export function createWeaponController() {
     equippedId = null;
   }
 
-  function cycleOwnedWeapons(direction) {
-    const owned = getOwnedWeaponIds();
-    if (!owned.length) {
-      equippedId = null;
-      return;
-    }
-
-    const currentIndex = Math.max(0, owned.indexOf(equippedId));
-    equippedId = owned[clampIndex(currentIndex + direction, owned.length)];
-  }
-
   function getShopItem() {
     return shopItems[shopIndex] ?? shopItems[0];
   }
@@ -188,21 +126,23 @@ export function createWeaponController() {
 
   function update(dt, input, { playerMode = "walking", inShop = false } = {}) {
     cooldown = Math.max(0, cooldown - dt);
-    muzzlePulse = Math.max(0, muzzlePulse - dt * 7.5);
+    const equippedWeapon = getWeaponAttributes(equippedId);
+    muzzlePulse = Math.max(
+      0,
+      muzzlePulse - dt * (equippedWeapon?.recoilReturnSpeed ?? 6)
+    );
 
     const shopPrevHeld = !!input.shopPrev;
     const shopNextHeld = !!input.shopNext;
     const shopPrevJust = shopPrevHeld && !prevShopPrev;
     const shopNextJust = shopNextHeld && !prevShopNext;
 
-    if (playerMode === "walking") {
-      if (inShop) {
-        if (shopPrevJust) {
-          shopIndex = clampIndex(shopIndex - 1, shopItems.length);
-        }
-        if (shopNextJust) {
-          shopIndex = clampIndex(shopIndex + 1, shopItems.length);
-        }
+    if (playerMode === "walking" && inShop) {
+      if (shopPrevJust) {
+        shopIndex = clampIndex(shopIndex - 1, shopItems.length);
+      }
+      if (shopNextJust) {
+        shopIndex = clampIndex(shopIndex + 1, shopItems.length);
       }
     }
 
@@ -231,14 +171,7 @@ export function createWeaponController() {
     }
 
     if (item.kind === "weapon") {
-      if (inventory[weapon.id].owned) {
-        return {
-          success: false,
-          money
-        };
-      }
-
-      if (money < weapon.price) {
+      if (inventory[weapon.id].owned || money < weapon.price) {
         return {
           success: false,
           money
@@ -256,14 +189,7 @@ export function createWeaponController() {
       };
     }
 
-    if (!inventory[weapon.id].owned) {
-      return {
-        success: false,
-        money
-      };
-    }
-
-    if (money < weapon.ammoPrice) {
+    if (!inventory[weapon.id].owned || money < weapon.ammoPrice) {
       return {
         success: false,
         money
@@ -282,23 +208,19 @@ export function createWeaponController() {
     playerMode = "walking",
     blocked = false
   } = {}) {
-    if (playerMode !== "walking") return null;
-    if (blocked) return null;
-    if (!equippedId) return null;
+    if (playerMode !== "walking" || blocked || !equippedId) return null;
 
     const weapon = CATALOG_BY_ID.get(equippedId);
     const ammoState = inventory[equippedId];
 
-    if (!weapon || !ammoState || !ammoState.owned) return null;
-    if (ammoState.ammo <= 0) return null;
+    if (!weapon || !ammoState || !ammoState.owned || ammoState.ammo <= 0) return null;
 
     const wantsToFire = weapon.automatic ? fireHeld : fireJustPressed;
-    if (!wantsToFire) return null;
-    if (cooldown > 0) return null;
+    if (!wantsToFire || cooldown > 0) return null;
 
     ammoState.ammo -= 1;
     cooldown = weapon.fireInterval;
-    muzzlePulse = 1;
+    muzzlePulse = Math.min(1.85, muzzlePulse + (weapon.muzzleKick ?? 1));
 
     return {
       weaponId: weapon.id,
@@ -371,10 +293,16 @@ export function createWeaponController() {
   }
 
   function getVisualState() {
+    const weapon = getWeaponAttributes(equippedId);
+
     return {
       equippedId,
       hasEquippedWeapon: !!equippedId && !holstered,
-      muzzlePulse
+      muzzlePulse,
+      poseRecoil: weapon?.poseRecoil ?? 0.26,
+      cameraKick: weapon?.cameraKick ?? 0.08,
+      cameraLift: weapon?.cameraLift ?? 0.03,
+      recoilClimb: weapon?.recoilClimb ?? 0
     };
   }
 
