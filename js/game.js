@@ -1826,6 +1826,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         x: characterState.x,
         z: characterState.z,
         heading: characterState.heading,
+        aimHeading: typeof controlContext?.aimHeading === "number"
+          ? controlContext.aimHeading
+          : characterState.heading,
         aimPitch: typeof controlContext?.aimPitch === "number"
           ? controlContext.aimPitch
           : 0,

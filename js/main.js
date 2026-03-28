@@ -499,6 +499,7 @@ function updateCrosshair(state) {
     state.inventoryHud.activeItemKind === "weapon";
 
   crosshairEl.classList.toggle("hidden", !shouldShow);
+  document.body.style.cursor = shouldShow ? "none" : "";
   if (!shouldShow) return;
 
   const aimBlend = state.characterState?.aimBlend ?? 0;
@@ -511,9 +512,16 @@ function updateCrosshair(state) {
   const offsetX = Math.sin(crosshairAnimTime * 5.2) * swayAmp * 0.32;
   const offsetY = Math.abs(Math.sin(crosshairAnimTime * 10.4)) * swayAmp;
   const spread = THREE.MathUtils.lerp(18, 11, aimBlend) + speedNorm * 12 + sprintFactor * 5;
+  const cursor = cameraController.getCursorScreenPosition();
+  const crosshairOffsetX = cameraController.isFirstPerson()
+    ? offsetX
+    : cursor.x - window.innerWidth * 0.5 + offsetX;
+  const crosshairOffsetY = cameraController.isFirstPerson()
+    ? offsetY
+    : cursor.y - window.innerHeight * 0.5 + offsetY;
 
-  crosshairEl.style.setProperty("--crosshair-x", `${offsetX.toFixed(2)}px`);
-  crosshairEl.style.setProperty("--crosshair-y", `${offsetY.toFixed(2)}px`);
+  crosshairEl.style.setProperty("--crosshair-x", `${crosshairOffsetX.toFixed(2)}px`);
+  crosshairEl.style.setProperty("--crosshair-y", `${crosshairOffsetY.toFixed(2)}px`);
   crosshairEl.style.setProperty("--crosshair-scale", `${(1 - aimBlend * 0.08).toFixed(3)}`);
   crosshairRingEl?.style.setProperty("--crosshair-size", `${spread.toFixed(2)}px`);
 }
@@ -1021,10 +1029,12 @@ function animate() {
   updatePlayerCharacterVisual(playerCharacter, dt, state.characterState);
 
   cameraController.update(state, dt, playerCar, playerCharacter, false);
-  const targetFov =
-    cameraController.isFirstPerson() && state.playerMode === "walking"
-      ? THREE.MathUtils.lerp(68, 57, state.characterState?.aimBlend ?? 0)
-      : 68;
+  const walkingAimBlend = state.characterState?.aimBlend ?? 0;
+  const targetFov = state.playerMode === "walking"
+    ? cameraController.isFirstPerson()
+      ? THREE.MathUtils.lerp(68, 57, walkingAimBlend)
+      : THREE.MathUtils.lerp(68, 40, walkingAimBlend)
+    : 68;
   camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 12, dt);
   camera.updateProjectionMatrix();
   updateUI(state);

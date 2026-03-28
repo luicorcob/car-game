@@ -74,10 +74,10 @@ export const CONFIG = {
     serviceSideOffset: 2.2,
     serviceSideOffsetRefuel: 3.2,
 
-    walkHeight: 3.7,
-    walkFollowDistance: 6.2,
+    walkHeight: 3.15,
+    walkFollowDistance: 5.15,
     walkLookAhead: 4.9,
-    walkLookHeight: 1.3,
+    walkLookHeight: 1.68,
     walkSideOffset: 0.48,
 
     firstPersonPositionDamping: 14,

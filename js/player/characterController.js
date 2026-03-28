@@ -57,11 +57,13 @@ export function createCharacterController(world) {
   function update(input, dt, extraColliders = [], control = null) {
     const useFirstPersonMovement = !!control?.firstPerson;
     const aiming = !!control?.aiming;
+    const faceAim = !!control?.faceAim;
     const crouchHeld = !!input.crouch;
     const thirdPersonTurnSensitivity =
       typeof control?.thirdPersonTurnSensitivity === "number"
         ? control.thirdPersonTurnSensitivity
         : 1;
+    const aimingTurnMultiplier = !useFirstPersonMovement && aiming ? 0.55 : 1;
     const moveHeading =
       typeof control?.moveHeading === "number"
         ? control.moveHeading
@@ -130,15 +132,19 @@ export function createCharacterController(world) {
     state.moveX = moveX;
     state.moveZ = moveZ;
 
-    const shouldUpdateHeading = useFirstPersonMovement || isMoving;
+    const shouldUpdateHeading = useFirstPersonMovement || isMoving || faceAim;
     if (shouldUpdateHeading) {
       const targetHeading = useFirstPersonMovement
         ? moveHeading
-        : Math.atan2(moveX, -moveZ);
+        : faceAim && typeof control?.faceHeading === "number"
+          ? control.faceHeading
+          : Math.atan2(moveX, -moveZ);
       const delta = normalizeAngle(targetHeading - state.heading);
       const turnSpeed = useFirstPersonMovement
         ? CONFIG.onFoot.turnSpeed * 2
-        : CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity;
+        : faceAim
+          ? CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity * aimingTurnMultiplier * 1.2
+          : CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity * aimingTurnMultiplier;
 
       state.heading = normalizeAngle(
         state.heading + delta * Math.min(1, turnSpeed * dt)

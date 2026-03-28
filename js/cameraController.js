@@ -56,11 +56,20 @@ export function createCameraController(camera, lookTarget, options = {}) {
   let aimDownSights = false;
   let aimBlend = 0;
 
+  const mouseScreen = new THREE.Vector2(
+    window.innerWidth * 0.5,
+    window.innerHeight * 0.5
+  );
+  const mouseNdc = new THREE.Vector2(0, 0);
+  const raycaster = new THREE.Raycaster();
+  const aimPlane = new THREE.Plane();
   const tempDirection = new THREE.Vector3();
   const tempForward = new THREE.Vector3();
   const tempPose = new THREE.Vector3();
   const tempLook = new THREE.Vector3();
   const tempAimDirection = new THREE.Vector3();
+  const tempAimPoint = new THREE.Vector3();
+  const tempAimOrigin = new THREE.Vector3();
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -96,7 +105,26 @@ export function createCameraController(camera, lookTarget, options = {}) {
     return !!target?.closest?.("input, select, button, textarea, label");
   }
 
+  function updateMouseViewportPosition(clientX, clientY) {
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+
+    mouseScreen.set(
+      clamp(clientX, 0, width),
+      clamp(clientY, 0, height)
+    );
+
+    mouseNdc.set(
+      clamp((mouseScreen.x / width) * 2 - 1, -1, 1),
+      clamp(-(mouseScreen.y / height) * 2 + 1, -1, 1)
+    );
+  }
+
   function onMouseMove(event) {
+    if (typeof event.clientX === "number" && typeof event.clientY === "number") {
+      updateMouseViewportPosition(event.clientX, event.clientY);
+    }
+
     if (!firstPerson) return;
     if (pointerLockBlocked) return;
     if (usePointerLock && !pointerLocked) return;
@@ -553,7 +581,12 @@ export function createCameraController(camera, lookTarget, options = {}) {
   }
 
   function getWalkingControlContext() {
-    if (!firstPerson) {
+    const walkingMode = (lastState?.playerMode ?? "walking") === "walking";
+    const hasEquippedWeapon =
+      !!lastState?.weaponHud?.hasEquippedWeapon &&
+      lastState?.inventoryHud?.activeItemKind === "weapon";
+
+    if (!walkingMode) {
       return {
         firstPerson: false,
         moveHeading: null,
@@ -562,11 +595,13 @@ export function createCameraController(camera, lookTarget, options = {}) {
         aiming: false,
         aimBlend: 0,
         aimDirection: null,
+        faceAim: false,
+        faceHeading: null,
         thirdPersonTurnSensitivity
       };
     }
 
-    if ((lastState?.playerMode ?? "walking") !== "walking") {
+    if (!firstPerson && !hasEquippedWeapon) {
       return {
         firstPerson: false,
         moveHeading: null,
@@ -575,6 +610,59 @@ export function createCameraController(camera, lookTarget, options = {}) {
         aiming: false,
         aimBlend: 0,
         aimDirection: null,
+        faceAim: false,
+        faceHeading: null,
+        thirdPersonTurnSensitivity
+      };
+    }
+
+    if (!firstPerson) {
+      const playerX = lastState?.playerPose?.x ?? 0;
+      const playerZ = lastState?.playerPose?.z ?? 0;
+      const playerY =
+        (lastState?.characterState?.jumpOffset ?? 0) +
+        1.42 -
+        (lastState?.characterState?.crouchBlend ?? 0) * 0.28;
+
+      raycaster.setFromCamera(mouseNdc, camera);
+
+      aimPlane.set(new THREE.Vector3(0, 1, 0), -playerY);
+      const hitAimPlane = raycaster.ray.intersectPlane(aimPlane, tempAimPoint);
+
+      if (!hitAimPlane) {
+        tempAimPoint.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, 36);
+      }
+
+      tempAimOrigin.set(playerX, playerY, playerZ);
+      tempAimDirection.copy(tempAimPoint).sub(tempAimOrigin);
+
+      const flatLength = Math.hypot(tempAimDirection.x, tempAimDirection.z);
+      if (flatLength < 0.0001) {
+        tempAimDirection.set(0, 0, -1);
+      } else {
+        tempAimDirection.normalize();
+      }
+
+      const aimHeading = Math.atan2(tempAimDirection.x, -tempAimDirection.z);
+      const aimPitch = Math.atan2(
+        tempAimDirection.y,
+        Math.max(0.0001, flatLength)
+      );
+
+      return {
+        firstPerson: false,
+        moveHeading: null,
+        aimHeading,
+        aimPitch,
+        aiming: aimDownSights,
+        aimBlend: aimDownSights ? 1 : 0,
+        aimDirection: {
+          x: tempAimDirection.x,
+          y: tempAimDirection.y,
+          z: tempAimDirection.z
+        },
+        faceAim: false,
+        faceHeading: null,
         thirdPersonTurnSensitivity
       };
     }
@@ -597,7 +685,16 @@ export function createCameraController(camera, lookTarget, options = {}) {
         y: tempAimDirection.y,
         z: tempAimDirection.z
       },
+      faceAim: false,
+      faceHeading: null,
       thirdPersonTurnSensitivity
+    };
+  }
+
+  function getCursorScreenPosition() {
+    return {
+      x: mouseScreen.x,
+      y: mouseScreen.y
     };
   }
 
@@ -638,6 +735,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
     setSettings,
     getSettings,
     getWalkingControlContext,
+    getCursorScreenPosition,
     resetFirstPersonLook,
     update,
     dispose

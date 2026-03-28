@@ -213,7 +213,7 @@ function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
       armLeftZ: 0.18,
       armRightZ: -0.12,
 
-      handX: -0.17,
+      handX: 0.03,
       handY: -0.31 + bob * 0.012,
       handZ: 0.19 - recoil * 0.025,
 
@@ -231,7 +231,7 @@ function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
     armLeftZ: 0.31,
     armRightZ: -0.14,
 
-    handX: -0.17,
+    handX: 0.02,
     handY: -0.27 + bob * 0.01,
     handZ: longGunForward - recoil * 0.035,
 
@@ -265,23 +265,23 @@ function getFirstPersonWeaponPose(weaponId, bob, recoil) {
 
 function applyThirdPersonWeaponAlignment(weapon, weaponId) {
   weapon.group.position.set(0, 0, 0);
-  weapon.group.rotation.set(0, -Math.PI / 2, 0);
+  weapon.group.rotation.set(Math.PI, Math.PI / 2, 0);
 
   if (weaponId === "pistol") {
-    weapon.group.position.set(0.02, -0.01, 0.02);
-    weapon.group.rotation.z = 0.04;
+    weapon.group.position.set(-0.02, -0.01, 0.04);
+    weapon.group.rotation.z = -0.04;
     return;
   }
 
   if (weaponId === "shotgun") {
-    weapon.group.position.set(0.02, -0.02, 0.08);
-    weapon.group.rotation.z = 0.03;
+    weapon.group.position.set(-0.02, -0.02, 0.1);
+    weapon.group.rotation.z = -0.03;
     return;
   }
 
   if (weaponId === "rifle") {
-    weapon.group.position.set(0.02, -0.02, 0.1);
-    weapon.group.rotation.z = 0.03;
+    weapon.group.position.set(-0.02, -0.02, 0.12);
+    weapon.group.rotation.z = -0.03;
   }
 }
 
@@ -646,7 +646,14 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   character.rotation.y = rig.yaw;
 
   const carryingPizza = !!state.carryingPizza;
+  const aimHeading = typeof state.aimHeading === "number" ? state.aimHeading : state.heading;
   const aimPitch = typeof state.aimPitch === "number" ? state.aimPitch : 0;
+  const thirdPersonAimYaw = THREE.MathUtils.clamp(
+    normalizeAngle(aimHeading - state.heading),
+    -1.05,
+    1.05
+  );
+  const thirdPersonAimPitch = THREE.MathUtils.clamp(aimPitch, -0.8, 0.7);
   const aiming = !!state.aiming;
   const crouchBlend = typeof state.crouchBlend === "number" ? state.crouchBlend : 0;
   const weaponState = state.weapon ?? {
@@ -753,9 +760,22 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     );
 
     if (!inFirstPerson) {
+      rig.armLeftPivot.rotation.y += thirdPersonAimYaw * 0.14;
+      rig.armRightPivot.rotation.y += thirdPersonAimYaw * 0.42;
+      rig.armLeftPivot.rotation.z += thirdPersonAimYaw * 0.08;
+      rig.armRightPivot.rotation.z += thirdPersonAimYaw * 0.18;
+      rig.armLeftPivot.rotation.x -= thirdPersonAimPitch * 0.16;
+      rig.armRightPivot.rotation.x -= thirdPersonAimPitch * 0.95;
+      rig.weaponHandRoot.rotation.x -= thirdPersonAimPitch * 1.25;
+      rig.weaponHandRoot.rotation.y += thirdPersonAimYaw * 0.9;
+      rig.weaponHandRoot.rotation.z -= thirdPersonAimYaw * 0.18;
+    }
+
+    if (!inFirstPerson) {
       const active = rig.thirdPersonWeapons[weaponState.equippedId];
       if (active) {
         applyThirdPersonWeaponAlignment(active, weaponState.equippedId);
+        active.group.rotation.x -= thirdPersonAimPitch * 1.05;
         active.group.visible = true;
         active.flash.visible = muzzlePulse > 0.08;
         active.flash.scale.setScalar(1 + muzzlePulse * 1.16);
