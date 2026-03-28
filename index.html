@@ -19,7 +19,7 @@
 </head>
 <body>
   <div id="ui">
-    <div class="panel info">
+    <div id="road-driver-menu" class="panel info hidden">
       <h1>Road Driver 3D</h1>
       <p><strong>Coche:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
       <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar, C para agacharse.</p>
@@ -41,6 +41,8 @@
       <div>Estado: <span id="status">Jugando</span></div>
     </div>
   </div>
+
+  <div id="road-driver-hint" class="road-driver-hint">Tab para desplegar Road Driver</div>
 
   <div id="mission-card" class="panel mission-card">
     <div class="mission-kicker">MISIÓN</div>
@@ -84,12 +86,6 @@
     </div>
   </div>
 
-  <div id="weapon-card" class="panel weapon-card">
-    <div class="weapon-kicker">ARMAMENTO</div>
-    <div id="weapon-name" class="weapon-name">Sin arma</div>
-    <div id="weapon-ammo" class="weapon-ammo">Sin equipar</div>
-    <div id="weapon-state" class="weapon-state">Compra en Armería Atlas</div>
-  </div>
 
   <div id="hotbar" class="hotbar">
     <div class="hotbar-slot"><span class="hotbar-key">1</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
@@ -264,10 +260,11 @@
     <p>Pulsa <strong>R</strong> para reiniciar</p>
   </div>
 
-  <button id="settings-toggle" class="settings-toggle" type="button">Ajustes</button>
+  <button id="settings-toggle" class="settings-toggle hidden" type="button">Ajustes</button>
 
   <section id="camera-settings" class="panel camera-settings hidden">
     <div class="camera-settings-kicker">AJUSTES</div>
+    <p class="camera-settings-help">Pulsa Esc para abrir o cerrar este panel. Mientras esta abierto, la partida queda en pausa.</p>
 
     <label class="camera-setting">
       <span>Volumen de armas</span>

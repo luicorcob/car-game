@@ -206,6 +206,39 @@ function createVehicleAudioController() {
   };
 }
 
+function createDeathAudioController() {
+  const deathAudio = new Audio(new URL("../sounds/damage.mp3", import.meta.url).href);
+  deathAudio.preload = "auto";
+  let masterVolume = 0.5;
+  const baseVolume = 0.18;
+
+  function syncVolume() {
+    deathAudio.volume = Math.max(0, Math.min(1, baseVolume * masterVolume));
+  }
+
+  function setMasterVolume(volume) {
+    masterVolume = Math.max(0, Math.min(1, volume ?? 1));
+    syncVolume();
+  }
+
+  function playDeath() {
+    deathAudio.pause();
+    deathAudio.currentTime = 0;
+    syncVolume();
+    const playPromise = deathAudio.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  }
+
+  syncVolume();
+
+  return {
+    playDeath,
+    setMasterVolume
+  };
+}
+
 function sameLogicalSegment(a, b) {
   if (!a || !b || a.type !== b.type) return false;
 
@@ -351,6 +384,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   const shotTracers = [];
   const weaponSounds = createSoundBank(WEAPON_SOUND_CONFIG);
   const vehicleAudio = createVehicleAudioController();
+  const deathAudio = createDeathAudioController();
 
   const tracerTempMid = new THREE.Vector3();
   const tracerTempDir = new THREE.Vector3();
@@ -399,6 +433,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   const MAX_SHOT_BLOOM = 1.6;
 
   weaponSounds.setMasterVolume(weaponSoundVolume);
+  deathAudio.setMasterVolume(weaponSoundVolume);
 
   function getPlayerHealthRatio() {
     return clamp(playerHealth / CONFIG.health.playerMax, 0, 1);
@@ -502,6 +537,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       const remainingHealth = damagePlayer(npcDamage);
       if (remainingHealth > 0) continue;
 
+      deathAudio.playDeath();
       gameOver = true;
       failureLabel = "Te abatieron";
       characterDestroyed = true;
@@ -1593,6 +1629,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   function triggerVehicleImpact(otherVehicle, playerLocal, otherLocal, otherPose) {
     if (gameOver) return;
 
+    deathAudio.playDeath();
     gameOver = true;
     failureLabel = "Impacto total";
     player.speed = 0;
@@ -1662,14 +1699,14 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       height: 0.92
     });
 
+    if (remainingHealth > 0) return;
+
     destruction.triggerPedestrianHit(
       { x: characterState.x, z: characterState.z },
       hitPose.heading,
       Math.max(0.95, hitVehicle.speed * 5.4)
     );
-
-    if (remainingHealth > 0) return;
-
+    deathAudio.playDeath();
     gameOver = true;
     failureLabel = "Atropellado";
     characterDestroyed = true;
@@ -1736,6 +1773,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           if (removed) {
             pedestrianHealth.delete(ped.id);
             hostileNpcCooldowns.delete(ped.id);
+            deathAudio.playDeath();
             destruction.triggerPedestrianHit(
               removed,
               player.pose.heading,
@@ -1809,6 +1847,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
     pedestrianHealth.delete(hit.id);
     hostileNpcCooldowns.delete(hit.id);
+    deathAudio.playDeath();
 
     destruction.triggerPedestrianHit(
       removed,
@@ -2510,6 +2549,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   function setWeaponSoundVolume(volume) {
     weaponSoundVolume = clamp(volume ?? 0.5, 0, 1);
     weaponSounds.setMasterVolume(weaponSoundVolume);
+    deathAudio.setMasterVolume(weaponSoundVolume);
     return weaponSoundVolume;
   }
 
