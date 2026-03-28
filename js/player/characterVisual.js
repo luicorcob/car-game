@@ -228,14 +228,14 @@ function createWeaponModel(type, firstPerson = false) {
 function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
   if (weaponId === "pistol") {
     return {
-      armLeftX: -0.74 + bob * 0.02 + walkSway * 0.02,
-      armRightX: -1.36 - recoil * 0.34 + bob * 0.02,
-      armLeftZ: 0.1,
-      armRightZ: -0.18,
+      armVisualRightX: -1.44 - recoil * 0.36 + bob * 0.02,
+      armVisualLeftX: -0.58 + bob * 0.015 + walkSway * 0.012,
+      armVisualRightZ: -0.22,
+      armVisualLeftZ: 0.04,
 
-      handX: 0.06,
-      handY: -0.31 + bob * 0.012,
-      handZ: 0.19 - recoil * 0.025,
+      handX: -0.03,
+      handY: -0.67 + bob * 0.012,
+      handZ: 0.08 - recoil * 0.025,
 
       handRotX: -1.3 - recoil * 0.1,
       handRotY: Math.PI / 2 - 0.03,
@@ -248,16 +248,28 @@ function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
     : weaponId === "francotirador"
       ? 0.34
       : 0.3;
+  const longGunHandX = weaponId === "francotirador"
+    ? -0.16
+    : weaponId === "fusil"
+      ? -0.1
+      : weaponId === "shotgun"
+        ? -0.09
+        : -0.03;
+  const longGunHandDrop = weaponId === "francotirador"
+    ? -0.16
+    : weaponId === "fusil"
+      ? -0.1
+      : 0;
 
   return {
-    armLeftX: -0.92 - recoil * 0.04 + bob * 0.02,
-    armRightX: -1.46 - recoil * 0.28 + bob * 0.02,
-    armLeftZ: 0.18,
-    armRightZ: -0.2,
+    armVisualRightX: -1.52 - recoil * 0.3 + bob * 0.02,
+    armVisualLeftX: -0.82 - recoil * 0.02 + bob * 0.015,
+    armVisualRightZ: -0.24,
+    armVisualLeftZ: 0.08,
 
-    handX: 0.05,
-    handY: -0.27 + bob * 0.01,
-    handZ: longGunForward - recoil * 0.035,
+    handX: longGunHandX,
+    handY: -0.65 - longGunHandDrop + bob * 0.01,
+    handZ: (longGunForward - 0.12) - recoil * 0.035,
 
     handRotX: -1.5 - recoil * 0.12,
     handRotY: Math.PI / 2 - 0.025,
@@ -311,8 +323,11 @@ function applyThirdPersonWeaponAlignment(weapon, weaponId) {
   if (weaponId === "fusil" || weaponId === "francotirador") {
     weapon.group.position.set(0.045, -0.02, 0.12);
     weapon.group.rotation.z = -0.03;
+    if (weaponId === "fusil") {
+      weapon.group.position.y = 0.08;
+    }
     if (weaponId === "francotirador") {
-      weapon.group.position.set(0.05, -0.018, 0.18);
+      weapon.group.position.set(0.05, 0.14, 0.18);
       weapon.group.rotation.z = -0.04;
     }
   }
@@ -410,30 +425,30 @@ export function createPlayerCharacter() {
   backpack.position.set(0, 1.46, -0.23);
   root.add(backpack);
 
-  const armLeftPivot = new THREE.Group();
-  armLeftPivot.position.set(-0.4, 1.72, 0);
-  root.add(armLeftPivot);
+  const armVisualRightPivot = new THREE.Group();
+  armVisualRightPivot.position.set(-0.4, 1.72, 0);
+  root.add(armVisualRightPivot);
 
-  const armRightPivot = new THREE.Group();
-  armRightPivot.position.set(0.4, 1.72, 0);
-  root.add(armRightPivot);
+  const armVisualLeftPivot = new THREE.Group();
+  armVisualLeftPivot.position.set(0.4, 1.72, 0);
+  root.add(armVisualLeftPivot);
 
-  const armLeft = createLimb(0.16, 0.64, 0.16, 0x2563eb);
-  const armRight = createLimb(0.16, 0.64, 0.16, 0x2563eb);
-  armLeftPivot.add(armLeft);
-  armRightPivot.add(armRight);
+  const armVisualRight = createLimb(0.16, 0.64, 0.16, 0x2563eb);
+  const armVisualLeft = createLimb(0.16, 0.64, 0.16, 0x2563eb);
+  armVisualRightPivot.add(armVisualRight);
+  armVisualLeftPivot.add(armVisualLeft);
 
-  const handLeft = new THREE.Mesh(
+  const handVisualRight = new THREE.Mesh(
     new THREE.BoxGeometry(0.14, 0.18, 0.14),
     new THREE.MeshStandardMaterial({ color: 0xf1c27d })
   );
-  handLeft.position.y = -0.72;
-  armLeftPivot.add(handLeft);
+  handVisualRight.position.y = -0.72;
+  armVisualRightPivot.add(handVisualRight);
 
-  const handRight = handLeft.clone();
-  handRight.material = handLeft.material.clone();
-  handRight.position.y = -0.72;
-  armRightPivot.add(handRight);
+  const handVisualLeft = handVisualRight.clone();
+  handVisualLeft.material = handVisualRight.material.clone();
+  handVisualLeft.position.y = -0.72;
+  armVisualLeftPivot.add(handVisualLeft);
 
   const legLeftPivot = new THREE.Group();
   legLeftPivot.position.set(-0.15, 0.94, 0);
@@ -469,9 +484,9 @@ export function createPlayerCharacter() {
   root.add(pizzaBox);
 
   const weaponHandRoot = new THREE.Group();
-  weaponHandRoot.position.set(0.17, -0.31, 0.19);
+  weaponHandRoot.position.set(-0.03, -0.65, 0.08);
   weaponHandRoot.rotation.set(-1.3, -Math.PI / 2 + 0.03, 0.05);
-  armLeftPivot.add(weaponHandRoot);
+  armVisualRightPivot.add(weaponHandRoot);
 
   const firstPersonAnchor = new THREE.Object3D();
   firstPersonAnchor.position.set(0, 2.02, 0.02);
@@ -514,10 +529,10 @@ export function createPlayerCharacter() {
     head,
     hair,
     backpack,
-    armLeft,
-    armRight,
-    handLeft,
-    handRight,
+    armVisualRight,
+    armVisualLeft,
+    handVisualRight,
+    handVisualLeft,
     legLeft,
     legRight,
     shoeLeft,
@@ -527,8 +542,8 @@ export function createPlayerCharacter() {
   group.userData.characterRig = {
     shadow,
     root,
-    armLeftPivot,
-    armRightPivot,
+    armVisualRightPivot,
+    armVisualLeftPivot,
     legLeftPivot,
     legRightPivot,
     pizzaBox,
@@ -625,8 +640,8 @@ export function resetPlayerCharacterVisual(character) {
   character.rotation.set(0, rig.yaw, 0);
 
   rig.root.position.y = 0;
-  rig.armLeftPivot.rotation.set(0, 0, 0);
-  rig.armRightPivot.rotation.set(0, 0, 0);
+  rig.armVisualRightPivot.rotation.set(0, 0, 0);
+  rig.armVisualLeftPivot.rotation.set(0, 0, 0);
   rig.legLeftPivot.rotation.set(0, 0, 0);
   rig.legRightPivot.rotation.set(0, 0, 0);
 
@@ -634,7 +649,7 @@ export function resetPlayerCharacterVisual(character) {
   rig.shadow.material.opacity = 0.2;
   rig.pizzaBox.visible = false;
 
-  rig.weaponHandRoot.position.set(0.17, -0.31, 0.19);
+  rig.weaponHandRoot.position.set(-0.03, -0.65, 0.08);
   rig.weaponHandRoot.rotation.set(-1.3, -Math.PI / 2 + 0.03, 0.05);
   rig.firstPersonAnchor.position.set(0, 2.02, 0.02);
   rig.firstPersonAnchor.rotation.set(0, 0, 0);
@@ -779,10 +794,10 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     rig.legLeftPivot.rotation.x = legSwing * 0.72 + rig.crouchBlend * 0.55;
     rig.legRightPivot.rotation.x = -legSwing * 0.72 + rig.crouchBlend * 0.55;
 
-    rig.armLeftPivot.rotation.x = -1.1 + bob * 0.4;
-    rig.armRightPivot.rotation.x = -1.1 + bob * 0.4;
-    rig.armLeftPivot.rotation.z = -0.18;
-    rig.armRightPivot.rotation.z = 0.18;
+    rig.armVisualRightPivot.rotation.x = -1.1 + bob * 0.4;
+    rig.armVisualLeftPivot.rotation.x = -1.1 + bob * 0.4;
+    rig.armVisualRightPivot.rotation.z = -0.18;
+    rig.armVisualLeftPivot.rotation.z = 0.18;
 
     rig.pizzaBox.position.set(0, 1.26 + bob * 0.28, 0.34);
     rig.pizzaBox.rotation.y += dt * 0.8;
@@ -798,8 +813,8 @@ export function updatePlayerCharacterVisual(character, dt, state) {
       legSwing * 0.08
     );
 
-    rig.armLeftPivot.rotation.set(aimPose.armLeftX, 0, aimPose.armLeftZ);
-    rig.armRightPivot.rotation.set(aimPose.armRightX, 0, aimPose.armRightZ);
+    rig.armVisualRightPivot.rotation.set(aimPose.armVisualRightX, 0, aimPose.armVisualRightZ);
+    rig.armVisualLeftPivot.rotation.set(aimPose.armVisualLeftX, 0, aimPose.armVisualLeftZ);
 
     rig.weaponHandRoot.position.set(
       aimPose.handX,
@@ -813,25 +828,29 @@ export function updatePlayerCharacterVisual(character, dt, state) {
       aimPose.handRotZ
     );
 
+    const yawLeftBias = thirdPersonAimYaw < 0 ? 1.28 : 1;
+
     if (!inFirstPerson) {
-      rig.armLeftPivot.rotation.y += thirdPersonAimYaw * 0.03;
-      rig.armRightPivot.rotation.y += thirdPersonAimYaw * 0.74;
-      rig.armLeftPivot.rotation.z += thirdPersonAimYaw * 0.02;
-      rig.armRightPivot.rotation.z += thirdPersonAimYaw * 0.34;
-      rig.armLeftPivot.rotation.x -= thirdPersonAimPitch * 0.03;
-      rig.armRightPivot.rotation.x -= thirdPersonAimPitch * 1.24 + recoil * 0.18;
+      rig.armVisualRightPivot.rotation.y -= thirdPersonAimYaw * 1.28 * yawLeftBias;
+      rig.armVisualLeftPivot.rotation.y -= thirdPersonAimYaw * 0.18 * yawLeftBias;
+      rig.armVisualRightPivot.rotation.z -= thirdPersonAimYaw * 0.66 * yawLeftBias;
+      rig.armVisualLeftPivot.rotation.z -= thirdPersonAimYaw * 0.12 * yawLeftBias;
+      rig.armVisualRightPivot.rotation.x -= thirdPersonAimPitch * 1.74 + recoil * 0.22;
+      rig.armVisualLeftPivot.rotation.x -= thirdPersonAimPitch * 0.2;
       rig.weaponHandRoot.position.z -= recoil * 0.045;
       rig.weaponHandRoot.position.y += recoil * 0.03;
-      rig.weaponHandRoot.rotation.x -= thirdPersonAimPitch * 1.25 + recoil * 0.22;
-      rig.weaponHandRoot.rotation.y += thirdPersonAimYaw * 0.9;
-      rig.weaponHandRoot.rotation.z -= thirdPersonAimYaw * 0.18 + recoil * 0.06;
+      rig.weaponHandRoot.rotation.x -= thirdPersonAimPitch * 0.52 + recoil * 0.22;
+      rig.weaponHandRoot.rotation.y -= thirdPersonAimYaw * 0.28 * yawLeftBias;
+      rig.weaponHandRoot.rotation.z += thirdPersonAimYaw * 0.05 * yawLeftBias - recoil * 0.06;
     }
 
     if (!inFirstPerson) {
       const active = rig.thirdPersonWeapons[weaponState.equippedId];
       if (active) {
         applyThirdPersonWeaponAlignment(active, weaponState.equippedId);
-        active.group.rotation.x -= thirdPersonAimPitch * 1.05 + recoil * 0.18;
+        active.group.rotation.x -= thirdPersonAimPitch * 0.4 + recoil * 0.18;
+        active.group.rotation.y -= thirdPersonAimYaw * 0.12 * yawLeftBias;
+        active.group.rotation.z += thirdPersonAimYaw * 0.08 * yawLeftBias;
         active.group.position.z -= recoil * 0.035;
         active.group.visible = true;
         active.flash.visible = muzzlePulse > 0.08;
@@ -898,10 +917,10 @@ export function updatePlayerCharacterVisual(character, dt, state) {
     rig.legLeftPivot.rotation.x = legSwing + rig.crouchBlend * 0.58;
     rig.legRightPivot.rotation.x = -legSwing + rig.crouchBlend * 0.58;
 
-    rig.armLeftPivot.rotation.x = armSwing - rig.crouchBlend * 0.18;
-    rig.armRightPivot.rotation.x = -armSwing - rig.crouchBlend * 0.18;
-    rig.armLeftPivot.rotation.z = 0;
-    rig.armRightPivot.rotation.z = 0;
+    rig.armVisualRightPivot.rotation.x = armSwing - rig.crouchBlend * 0.18;
+    rig.armVisualLeftPivot.rotation.x = -armSwing - rig.crouchBlend * 0.18;
+    rig.armVisualRightPivot.rotation.z = 0;
+    rig.armVisualLeftPivot.rotation.z = 0;
   }
 
   if (!inFirstPerson) {

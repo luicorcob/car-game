@@ -296,28 +296,33 @@ export function createCameraController(camera, lookTarget, options = {}) {
       const crouchBlend = state.characterState?.crouchBlend ?? 0;
       const crouchCameraDrop = crouchBlend * 0.62;
       const crouchLookDrop = crouchBlend * 0.4;
+      const forwardX = Math.sin(heading);
+      const forwardZ = -Math.cos(heading);
       const backX = -Math.sin(heading) * CONFIG.camera.walkFollowDistance;
       const backZ = Math.cos(heading) * CONFIG.camera.walkFollowDistance;
 
       const sideX = Math.cos(heading) * CONFIG.camera.walkSideOffset;
       const sideZ = Math.sin(heading) * CONFIG.camera.walkSideOffset;
+      const recoilBackX = -forwardX * shotCameraKick * 0.52;
+      const recoilBackZ = -forwardZ * shotCameraKick * 0.52;
 
       return {
-        cameraX: state.playerPose.x + backX + sideX,
+        cameraX: state.playerPose.x + backX + sideX + recoilBackX,
         cameraY:
           CONFIG.camera.walkHeight -
           crouchCameraDrop +
           (state.characterState?.jumpOffset ?? 0) * 0.18 +
-          shotCameraLift * 0.12,
-        cameraZ: state.playerPose.z + backZ + sideZ + shotCameraKick * 0.18,
+          shotCameraLift * 0.22 +
+          shotCameraKick * 0.08,
+        cameraZ: state.playerPose.z + backZ + sideZ + recoilBackZ,
 
         lookX: state.playerPose.x + Math.sin(heading) * CONFIG.camera.walkLookAhead,
         lookY:
           CONFIG.camera.walkLookHeight -
           crouchLookDrop +
           (state.characterState?.jumpOffset ?? 0) * 0.35 +
-          shotCameraKick * 0.72 +
-          shotCameraLift * 0.24,
+          shotCameraKick * 1.28 +
+          shotCameraLift * 0.4,
         lookZ: state.playerPose.z - Math.cos(heading) * CONFIG.camera.walkLookAhead,
 
         firstPerson: false
