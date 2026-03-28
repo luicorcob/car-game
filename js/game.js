@@ -303,6 +303,19 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     );
   }
 
+  function getVehiclePedestrianDamage(speed) {
+    const referenceSpeed = Math.max(
+      0.001,
+      CONFIG.health.vehiclePedestrianSpeedRef ?? CONFIG.player.maxSpeed
+    );
+    const speedRatio = clamp(Math.abs(speed) / referenceSpeed, 0, 1);
+    return THREE.MathUtils.lerp(
+      CONFIG.health.vehiclePedestrianMinDamage ?? 26,
+      CONFIG.health.vehiclePedestrianMaxDamage ?? 100,
+      Math.pow(speedRatio, 1.08)
+    );
+  }
+
   function clearShotTracers() {
     while (shotTracers.length) {
       const tracer = shotTracers.pop();
@@ -1358,6 +1371,40 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
         triggerVehicleImpact(car, local, otherLocal, otherPose);
         break;
+      }
+    }
+
+    if (gameOver) return;
+
+    for (const ped of world.getPedestrianTargets()) {
+      const dx = ped.x - playerOrigin.x;
+      const dz = ped.z - playerOrigin.z;
+      if (dx * dx + dz * dz > maxCollisionDistSq) continue;
+
+      const local = localizePoint(
+        { x: ped.x, z: ped.z },
+        playerOrigin,
+        player.pose.heading
+      );
+
+      if (
+        Math.abs(local.x) < CONFIG.player.collisionRadiusX + ped.radius &&
+        Math.abs(local.z) < CONFIG.player.collisionRadiusZ + ped.radius
+      ) {
+        const impactDamage = getVehiclePedestrianDamage(player.speed);
+        const remainingHealth = damagePedestrian(ped.id, impactDamage);
+
+        if (remainingHealth <= 0) {
+          const removed = world.destroyPedestrian(ped.id);
+          if (removed) {
+            pedestrianHealth.delete(ped.id);
+            destruction.triggerPedestrianHit(
+              removed,
+              player.pose.heading,
+              Math.max(0.95, Math.abs(player.speed) * 6.1)
+            );
+          }
+        }
       }
     }
   }
