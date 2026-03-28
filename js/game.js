@@ -1493,7 +1493,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       driftDirection * (CONFIG.player.driftVisualYaw ?? 0.08) * driftVisualRatio;
 
     let visualRoll =
-      -player.steer * CONFIG.player.bodyRoll * (0.25 + Math.abs(speedRatio) * 0.75) -
+      player.steer * CONFIG.player.bodyRoll * (0.25 + Math.abs(speedRatio) * 0.75) +
       driftDirection * (CONFIG.player.driftVisualRoll ?? 0.055) * driftVisualRatio;
     const visualPitch = -(CONFIG.player.driftVisualPitch ?? 0.03) * driftVisualRatio;
 
