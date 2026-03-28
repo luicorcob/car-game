@@ -260,6 +260,55 @@ export function createWorldGraph() {
     ].filter(Boolean);
   }
 
+  function findClosestRoadPose(x, z, options = {}) {
+    const maxDistance = options.maxDistance ?? Infinity;
+    let best = null;
+
+    for (const meta of roadMetas) {
+      const segment = buildRoadSegment(meta.fromNodeId, meta.dir);
+      if (!segment) continue;
+
+      const forward = dirVector(segment.dir);
+      const dx = x - segment.startX;
+      const dz = z - segment.startZ;
+      const projected = dx * forward.x + dz * forward.y;
+      const segmentS = Math.max(0, Math.min(segment.length, projected));
+
+      const baseX = segment.startX + forward.x * segmentS;
+      const baseZ = segment.startZ + forward.y * segmentS;
+      const lateral =
+        (x - baseX) * segment.rightX +
+        (z - baseZ) * segment.rightZ;
+
+      let laneOffset = laneCenters[0] ?? 0;
+      let laneDistance = Infinity;
+
+      for (const laneCenter of laneCenters) {
+        const delta = Math.abs(lateral - laneCenter);
+        if (delta < laneDistance) {
+          laneDistance = delta;
+          laneOffset = laneCenter;
+        }
+      }
+
+      const pose = evaluateSegment(segment, segmentS, laneOffset);
+      const distance = Math.hypot(x - pose.x, z - pose.z);
+
+      if (distance > maxDistance) continue;
+      if (!best || distance < best.distance) {
+        best = {
+          segment,
+          segmentS,
+          laneOffset,
+          pose,
+          distance
+        };
+      }
+    }
+
+    return best;
+  }
+
   return {
     step,
     coords,
@@ -277,6 +326,7 @@ export function createWorldGraph() {
     resolveTurn,
     getUpcomingIntersectionInfo,
     getStartRoad,
-    getTrafficSpawnRoads
+    getTrafficSpawnRoads,
+    findClosestRoadPose
   };
 }

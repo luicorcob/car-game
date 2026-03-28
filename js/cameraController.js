@@ -403,6 +403,20 @@ export function createCameraController(camera, lookTarget, options = {}) {
       return buildThirdPersonRig(state);
     }
 
+    if (state.playerMode === "driving") {
+      return {
+        cameraX: pose.position.x,
+        cameraY: pose.position.y,
+        cameraZ: pose.position.z,
+
+        lookX: pose.lookAt.x,
+        lookY: pose.lookAt.y,
+        lookZ: pose.lookAt.z,
+
+        firstPerson: true
+      };
+    }
+
     const baseHeading = state.playerPose?.heading ?? 0;
     const yawLimit = getModeYawLimit(state.playerMode);
     const { min, max } = getModePitchLimits(state.playerMode);
@@ -462,9 +476,16 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
   function applyRig(rig, dt, instant = false) {
     if (rig.firstPerson) {
+      if (firstPersonMode === "driving") {
+        camera.position.set(rig.cameraX, rig.cameraY, rig.cameraZ);
+        lookTarget.set(rig.lookX, rig.lookY, rig.lookZ);
+        camera.lookAt(lookTarget);
+        return;
+      }
+
       const snapWalkingFirstPerson = false;
-      const subtleWalkingFirstPerson =
-        firstPersonMode === "walking";
+      const subtleWalkingFirstPerson = firstPersonMode === "walking";
+
       const firstPersonPositionDamping =
         firstPersonMode === "driving"
           ? (CONFIG.camera.firstPersonPositionDampingDriving ?? CONFIG.camera.firstPersonPositionDamping ?? 14)
