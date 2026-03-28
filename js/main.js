@@ -60,6 +60,7 @@ const hotbarSlotEls = Array.from(document.querySelectorAll(".hotbar-slot"));
 const inventoryMenuEl = document.querySelector("#inventory-menu");
 const inventoryMenuSummaryEl = document.querySelector("#inventory-menu-summary");
 const inventoryMenuGridEl = document.querySelector("#inventory-menu-grid");
+const crosshairEl = document.querySelector("#crosshair");
 
 const promptEl = document.querySelector("#prompt");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
@@ -486,6 +487,18 @@ function updatePrompt(state) {
   );
 }
 
+function updateCrosshair(state) {
+  const shouldShow =
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !state.gameOver &&
+    state.playerMode === "walking" &&
+    state.weaponHud.hasEquippedWeapon &&
+    state.inventoryHud.activeItemKind === "weapon";
+
+  crosshairEl.classList.toggle("hidden", !shouldShow);
+}
+
 function updateFuelUI(state) {
   fuelPercentEl.textContent = `${state.fuelPct}%`;
   fuelLitersEl.textContent = `${state.fuelLiters.toFixed(1)} L`;
@@ -817,6 +830,7 @@ function updateUI(state) {
   updateWeaponUI(state);
   updateInventoryUI(state);
   updateMinimap(state);
+  updateCrosshair(state);
   updatePrompt(state);
   gameOverEl.classList.toggle("hidden", !state.gameOver);
 }

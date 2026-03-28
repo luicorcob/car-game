@@ -39,6 +39,41 @@ body {
   height: 100vh;
 }
 
+.crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  z-index: 9;
+  pointer-events: none;
+}
+
+.crosshair-ring,
+.crosshair-dot {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+}
+
+.crosshair-ring {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 0 12px rgba(106, 184, 255, 0.22);
+}
+
+.crosshair-dot {
+  width: 4px;
+  height: 4px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.42);
+}
+
 #ui {
   position: fixed;
   inset: 0;
@@ -1121,6 +1156,7 @@ body.editor-active #inventory-menu,
 body.editor-active #camera-settings,
 body.editor-active #settings-toggle,
 body.editor-active #prompt,
+body.editor-active #crosshair,
 body.editor-active #game-over {
   opacity: 0.18;
 }

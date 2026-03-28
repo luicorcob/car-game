@@ -58,6 +58,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
   const tempForward = new THREE.Vector3();
   const tempPose = new THREE.Vector3();
   const tempLook = new THREE.Vector3();
+  const tempAimDirection = new THREE.Vector3();
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -366,17 +367,24 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
   function applyRig(rig, dt, instant = false) {
     if (rig.firstPerson) {
+      const snapWalkingFirstPerson = false;
+      const subtleWalkingFirstPerson =
+        firstPersonMode === "walking";
       const firstPersonPositionDamping =
         firstPersonMode === "driving"
           ? (CONFIG.camera.firstPersonPositionDampingDriving ?? CONFIG.camera.firstPersonPositionDamping ?? 14)
-          : (CONFIG.camera.firstPersonPositionDampingWalking ?? CONFIG.camera.firstPersonPositionDamping ?? 14);
+          : (subtleWalkingFirstPerson
+              ? 40
+              : (CONFIG.camera.firstPersonPositionDampingWalking ?? CONFIG.camera.firstPersonPositionDamping ?? 14));
 
       const firstPersonLookDamping =
         firstPersonMode === "driving"
           ? (CONFIG.camera.firstPersonLookDampingDriving ?? CONFIG.camera.firstPersonLookDamping ?? 10)
-          : (CONFIG.camera.firstPersonLookDampingWalking ?? CONFIG.camera.firstPersonLookDamping ?? 10);
+          : (subtleWalkingFirstPerson
+              ? 36
+              : (CONFIG.camera.firstPersonLookDampingWalking ?? CONFIG.camera.firstPersonLookDamping ?? 10));
 
-      if (instant) {
+      if (instant || snapWalkingFirstPerson) {
         camera.position.set(rig.cameraX, rig.cameraY, rig.cameraZ);
         lookTarget.set(rig.lookX, rig.lookY, rig.lookZ);
         camera.lookAt(lookTarget);
@@ -520,6 +528,9 @@ export function createCameraController(camera, lookTarget, options = {}) {
       return {
         firstPerson: false,
         moveHeading: null,
+        aimHeading: null,
+        aimPitch: null,
+        aimDirection: null,
         thirdPersonTurnSensitivity
       };
     }
@@ -528,13 +539,29 @@ export function createCameraController(camera, lookTarget, options = {}) {
       return {
         firstPerson: false,
         moveHeading: null,
+        aimHeading: null,
+        aimPitch: null,
+        aimDirection: null,
         thirdPersonTurnSensitivity
       };
     }
 
+    tempAimDirection.set(
+      Math.sin(mouseYaw) * Math.cos(mousePitch),
+      Math.sin(mousePitch),
+      -Math.cos(mouseYaw) * Math.cos(mousePitch)
+    ).normalize();
+
     return {
       firstPerson: true,
       moveHeading: normalizeAngle(mouseYaw),
+      aimHeading: normalizeAngle(mouseYaw),
+      aimPitch: mousePitch,
+      aimDirection: {
+        x: tempAimDirection.x,
+        y: tempAimDirection.y,
+        z: tempAimDirection.z
+      },
       thirdPersonTurnSensitivity
     };
   }

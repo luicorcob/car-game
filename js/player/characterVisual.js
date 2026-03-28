@@ -208,36 +208,58 @@ function createWeaponModel(type, firstPerson = false) {
 function getThirdPersonWeaponPose(weaponId, bob, recoil, walkSway = 0) {
   if (weaponId === "pistol") {
     return {
-      armLeftX: -0.76 + bob * 0.05 + walkSway * 0.08,
-      armRightX: -1.22 - recoil * 0.36 + bob * 0.05,
-      armLeftZ: 0.12,
-      armRightZ: -0.08,
+      armLeftX: -0.84 + bob * 0.02 + walkSway * 0.03,
+      armRightX: -1.28 - recoil * 0.28 + bob * 0.02,
+      armLeftZ: 0.18,
+      armRightZ: -0.12,
 
-      handX: 0.08,
-      handY: -0.34 + bob * 0.03,
-      handZ: 0.17 - recoil * 0.04,
+      handX: -0.17,
+      handY: -0.31 + bob * 0.012,
+      handZ: 0.19 - recoil * 0.025,
 
-      handRotX: -1.24 - recoil * 0.14,
-      handRotY: Math.PI / 2 - 0.05,
-      handRotZ: -0.08
+      handRotX: -1.3 - recoil * 0.1,
+      handRotY: Math.PI / 2 - 0.03,
+      handRotZ: -0.05
     };
   }
 
   const longGunForward = weaponId === "shotgun" ? 0.24 : 0.3;
 
   return {
-    armLeftX: -1.02 - recoil * 0.1 + bob * 0.04,
-    armRightX: -1.34 - recoil * 0.26 + bob * 0.04,
-    armLeftZ: 0.28,
-    armRightZ: -0.12,
+    armLeftX: -1.08 - recoil * 0.08 + bob * 0.02,
+    armRightX: -1.38 - recoil * 0.2 + bob * 0.02,
+    armLeftZ: 0.31,
+    armRightZ: -0.14,
 
-    handX: 0.1,
-    handY: -0.29 + bob * 0.02,
-    handZ: longGunForward - recoil * 0.05,
+    handX: -0.17,
+    handY: -0.27 + bob * 0.01,
+    handZ: longGunForward - recoil * 0.035,
 
-    handRotX: -1.46 - recoil * 0.16,
-    handRotY: Math.PI / 2 - 0.04,
-    handRotZ: -0.1
+    handRotX: -1.5 - recoil * 0.12,
+    handRotY: Math.PI / 2 - 0.025,
+    handRotZ: -0.07
+  };
+}
+
+function getFirstPersonWeaponPose(weaponId, bob, recoil) {
+  if (weaponId === "pistol") {
+    return {
+      rootX: -0.54,
+      rootY: -0.29 + recoil * 0.11,
+      rootZ: 0.52 - recoil * 0.085,
+      rotX: -0.08 - recoil * 0.22,
+      rotY: 0.025,
+      rotZ: -0.012
+    };
+  }
+
+  return {
+    rootX: -0.52,
+    rootY: -0.31 + recoil * 0.12,
+    rootZ: weaponId === "shotgun" ? 0.5 - recoil * 0.075 : 0.54 - recoil * 0.08,
+    rotX: -0.1 - recoil * 0.24,
+    rotY: 0.03,
+    rotZ: -0.015
   };
 }
 
@@ -414,8 +436,8 @@ export function createPlayerCharacter() {
   root.add(pizzaBox);
 
   const weaponHandRoot = new THREE.Group();
-  weaponHandRoot.position.set(0.04, -0.58, 0.02);
-  weaponHandRoot.rotation.set(-0.3, Math.PI / 2, 0.12);
+  weaponHandRoot.position.set(-0.17, -0.31, 0.19);
+  weaponHandRoot.rotation.set(-1.3, Math.PI / 2 - 0.03, -0.05);
   armRightPivot.add(weaponHandRoot);
 
   const firstPersonAnchor = new THREE.Object3D();
@@ -423,8 +445,8 @@ export function createPlayerCharacter() {
   root.add(firstPersonAnchor);
 
   const firstPersonWeaponRoot = new THREE.Group();
-  firstPersonWeaponRoot.position.set(0.24, -0.24, 0.44);
-  firstPersonWeaponRoot.rotation.set(-0.12, 0.08, -0.04);
+  firstPersonWeaponRoot.position.set(-0.54, -0.29, 0.52);
+  firstPersonWeaponRoot.rotation.set(-0.08, 0.025, -0.012);
   firstPersonAnchor.add(firstPersonWeaponRoot);
 
   const thirdPersonWeapons = {
@@ -569,10 +591,11 @@ export function resetPlayerCharacterVisual(character) {
   rig.shadow.material.opacity = 0.2;
   rig.pizzaBox.visible = false;
 
-  rig.weaponHandRoot.position.set(0.04, -0.58, 0.02);
-  rig.weaponHandRoot.rotation.set(-0.3, Math.PI / 2, 0.12);
-  rig.firstPersonWeaponRoot.position.set(0.24, -0.24, 0.44);
-  rig.firstPersonWeaponRoot.rotation.set(-0.12, 0.08, -0.04);
+  rig.weaponHandRoot.position.set(-0.17, -0.31, 0.19);
+  rig.weaponHandRoot.rotation.set(-1.3, Math.PI / 2 - 0.03, -0.05);
+  rig.firstPersonAnchor.rotation.set(0, 0, 0);
+  rig.firstPersonWeaponRoot.position.set(-0.54, -0.29, 0.52);
+  rig.firstPersonWeaponRoot.rotation.set(-0.08, 0.025, -0.012);
 
   for (const mesh of rig.bodyMeshes) {
     mesh.visible = true;
@@ -595,6 +618,8 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   const rig = character.userData.characterRig;
   if (!rig) return;
 
+  const inFirstPerson = !!rig.forceHiddenForFirstPerson;
+
   const shouldShowCharacter = !!state.visible;
   character.visible = shouldShowCharacter;
 
@@ -607,18 +632,21 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   );
 
   const targetYaw = Math.PI - state.heading;
-  const yawDelta = normalizeAngle(targetYaw - rig.yaw);
-  rig.yaw = normalizeAngle(rig.yaw + yawDelta * Math.min(1, 12 * dt));
+  if (inFirstPerson) {
+    rig.yaw = normalizeAngle(targetYaw);
+  } else {
+    const yawDelta = normalizeAngle(targetYaw - rig.yaw);
+    rig.yaw = normalizeAngle(rig.yaw + yawDelta * Math.min(1, 12 * dt));
+  }
   character.rotation.y = rig.yaw;
 
   const carryingPizza = !!state.carryingPizza;
+  const aimPitch = typeof state.aimPitch === "number" ? state.aimPitch : 0;
   const weaponState = state.weapon ?? {
     equippedId: null,
     hasEquippedWeapon: false,
     muzzlePulse: 0
   };
-
-  const inFirstPerson = !!rig.forceHiddenForFirstPerson;
 
   for (const mesh of rig.bodyMeshes) {
     mesh.visible = !inFirstPerson;
@@ -626,6 +654,7 @@ export function updatePlayerCharacterVisual(character, dt, state) {
 
   rig.shadow.visible = !inFirstPerson;
   rig.pizzaBox.visible = carryingPizza && !inFirstPerson;
+  rig.firstPersonAnchor.rotation.set(-aimPitch * 0.92, 0, 0);
 
   for (const weapon of Object.values(rig.thirdPersonWeapons)) {
     resetWeaponTransforms(weapon);
@@ -653,18 +682,24 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   if (state.onGround) {
     legSwing = Math.sin(rig.animTime) * 0.85 * speedNorm;
     armSwing = -legSwing * 0.8;
-    bob = Math.abs(Math.sin(rig.animTime * 2)) * 0.035 * speedNorm;
+    bob = Math.abs(Math.sin(rig.animTime * 2)) * 0.018 * speedNorm;
   } else {
     legSwing = -0.18;
     armSwing = 0.22;
     bob = 0.02;
   }
 
+  if (inFirstPerson) {
+    legSwing = 0;
+    armSwing = 0;
+    bob *= 0.12;
+  }
+
   rig.root.position.y = bob;
 
   const hasWeapon = weaponState.hasEquippedWeapon && !carryingPizza;
   const muzzlePulse = weaponState.muzzlePulse ?? 0;
-  const recoil = muzzlePulse * 0.18;
+  const recoil = muzzlePulse * 0.26;
 
   if (carryingPizza) {
     rig.legLeftPivot.rotation.x = legSwing * 0.72;
@@ -686,7 +721,7 @@ export function updatePlayerCharacterVisual(character, dt, state) {
       weaponState.equippedId,
       bob,
       recoil,
-      legSwing * 0.14
+      legSwing * 0.08
     );
 
     rig.armLeftPivot.rotation.set(aimPose.armLeftX, 0, aimPose.armLeftZ);
@@ -719,16 +754,22 @@ export function updatePlayerCharacterVisual(character, dt, state) {
         active.flash.visible = muzzlePulse > 0.08;
         active.flash.scale.setScalar(1 + muzzlePulse * 1.5);
 
+        const fpPose = getFirstPersonWeaponPose(
+          weaponState.equippedId,
+          bob,
+          recoil
+        );
+
         rig.firstPersonWeaponRoot.position.set(
-          0.24,
-          -0.24 - bob * 0.14,
-          0.44 - recoil * 0.16
+          fpPose.rootX,
+          fpPose.rootY,
+          fpPose.rootZ
         );
 
         rig.firstPersonWeaponRoot.rotation.set(
-          -0.12 - recoil * 0.12,
-          0.08,
-          -0.04 + bob * 0.2
+          fpPose.rotX,
+          fpPose.rotY,
+          fpPose.rotZ
         );
       }
     }

@@ -1347,14 +1347,28 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     );
   }
 
-  function getShotOriginAndDirection(characterState) {
+  function getShotOriginAndDirection(characterState, aimControl = null) {
+    const hasAimDirection =
+      typeof aimControl?.aimDirection?.x === "number" &&
+      typeof aimControl?.aimDirection?.y === "number" &&
+      typeof aimControl?.aimDirection?.z === "number";
+    const aimHeading = typeof aimControl?.aimHeading === "number"
+      ? aimControl.aimHeading
+      : characterState.heading;
     const muzzlePose = getPlayerCharacterWeaponMuzzlePose(playerCharacter);
 
     if (muzzlePose) {
+      const tracerForward3D = hasAimDirection
+        ? new THREE.Vector3(
+            aimControl.aimDirection.x,
+            aimControl.aimDirection.y,
+            aimControl.aimDirection.z
+          ).normalize()
+        : muzzlePose.forward.clone().normalize();
       const flatForward = new THREE.Vector3(
-        muzzlePose.forward.x,
+        tracerForward3D.x,
         0,
-        muzzlePose.forward.z
+        tracerForward3D.z
       );
 
       if (flatForward.lengthSq() > 0.0001) {
@@ -1372,14 +1386,22 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           ),
           forwardX: flatForward.x,
           forwardZ: flatForward.z,
-          tracerForward3D: flatForward.clone()
+          rightX: -flatForward.z,
+          rightZ: flatForward.x,
+          tracerForward3D
         };
       }
     }
 
-    const heading = characterState.heading;
-    const forwardX = Math.sin(heading);
-    const forwardZ = -Math.cos(heading);
+    const forwardX = Math.sin(aimHeading);
+    const forwardZ = -Math.cos(aimHeading);
+    const tracerForward3D = hasAimDirection
+      ? new THREE.Vector3(
+          aimControl.aimDirection.x,
+          aimControl.aimDirection.y,
+          aimControl.aimDirection.z
+        ).normalize()
+      : new THREE.Vector3(forwardX, 0, forwardZ).normalize();
 
     return {
       origin2D: {
@@ -1393,16 +1415,23 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       ),
       forwardX,
       forwardZ,
-      tracerForward3D: new THREE.Vector3(forwardX, 0, forwardZ).normalize()
+      rightX: -forwardZ,
+      rightZ: forwardX,
+      tracerForward3D
     };
   }
 
-  function fireWeapon(shot, characterState) {
-    const shotPose = getShotOriginAndDirection(characterState);
-    const { origin2D, start3D, forwardX, forwardZ, tracerForward3D } = shotPose;
-
-    const rightX = Math.cos(characterState.heading);
-    const rightZ = Math.sin(characterState.heading);
+  function fireWeapon(shot, characterState, aimControl = null) {
+    const shotPose = getShotOriginAndDirection(characterState, aimControl);
+    const {
+      origin2D,
+      start3D,
+      forwardX,
+      forwardZ,
+      rightX,
+      rightZ,
+      tracerForward3D
+    } = shotPose;
 
     let bestHit = null;
 
@@ -1425,7 +1454,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           z: ped.z,
           forward,
           lateral,
-          heading: characterState.heading,
+          heading: typeof aimControl?.aimHeading === "number"
+            ? aimControl.aimHeading
+            : characterState.heading,
           intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02
         };
       }
@@ -1581,7 +1612,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         });
 
         if (shot) {
-          fireWeapon(shot, characterStateNow);
+          fireWeapon(shot, characterStateNow, controlContext);
         }
       }
 
@@ -1763,6 +1794,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         x: characterState.x,
         z: characterState.z,
         heading: characterState.heading,
+        aimPitch: typeof controlContext?.aimPitch === "number"
+          ? controlContext.aimPitch
+          : 0,
         planarSpeed: characterState.planarSpeed,
         jumpOffset: characterState.jumpOffset,
         onGround: characterState.onGround,
