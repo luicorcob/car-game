@@ -10,6 +10,7 @@ import { getPlayerCharacterWeaponMuzzlePose } from "./player/characterVisual.js"
 import { createDestructionController } from "./effects/destruction.js";
 import { createPizzaDeliveryController } from "./missions/pizzaDelivery.js";
 import { createWeaponController } from "./combat/weapons.js";
+import { getWeaponAttributes } from "./combat/weaponAttributes.js";
 
 const TRAFFIC_COLORS = [
   0x3366ff,
@@ -39,10 +40,20 @@ const TRUCK_TRAILER_COLORS = [
   0xfef3c7
 ];
 
+const INVENTORY_SLOT_COUNT = 20;
+const HOTBAR_SLOT_COUNT = 5;
+
 const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeAngle(angle) {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
 }
 
 function randRange(min, max) {
@@ -176,12 +187,25 @@ function localizePoint(point, origin, heading) {
   };
 }
 
+function distanceSq2D(a, b) {
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return dx * dx + dz * dz;
+}
+
 export function createGame(scene, playerCar, playerCharacter, world) {
   const traffic = [];
   const character = createCharacterController(world);
   const destruction = createDestructionController(scene);
-  const pizzaDelivery = createPizzaDeliveryController(world);
   const weapons = createWeaponController();
+  const inventory = {
+    pizzaBoxes: 0,
+    maxPizzaBoxes: CONFIG.pizzaDelivery.inventoryCapacity ?? 3,
+    fuelCans: 0,
+    maxFuelCans: CONFIG.fuel.portableCanMax ?? 3,
+    fuelPerCan: CONFIG.fuel.portableCanLiters ?? 20
+  };
+  const pizzaDelivery = createPizzaDeliveryController(world, inventory);
   const shotTracers = [];
 
   const tracerTempMid = new THREE.Vector3();
@@ -193,6 +217,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     segmentS: 0,
     laneOffset: 0,
     laneVelocity: 0,
+    handbrakeAmount: 0,
+    steer: 0,
     speed: 0,
     requestedTurn: 0,
     pose: { x: 0, z: 0, heading: 0 },
@@ -209,9 +235,86 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let money = 0;
   let gameOver = false;
   let prevInteract = false;
+  let prevSelectSlot1 = false;
+  let prevSelectSlot2 = false;
+  let prevSelectSlot3 = false;
+  let prevSelectSlot4 = false;
+  let prevSelectSlot5 = false;
   let playerMode = "driving";
   let failureLabel = "Chocado";
   let characterDestroyed = false;
+  let activeRefuelStationId = null;
+  let selectedHotbarSlot = 0;
+  let inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
+  let shotBloom = 0;
+  let playerHealth = CONFIG.health.playerMax;
+  let playerHealthRegenTimer = 0;
+  const pedestrianHealth = new Map();
+  const MAX_SHOT_BLOOM = 1.6;
+
+  function getPlayerHealthRatio() {
+    return clamp(playerHealth / CONFIG.health.playerMax, 0, 1);
+  }
+
+  function getPedestrianHealth(id) {
+    if (!pedestrianHealth.has(id)) {
+      pedestrianHealth.set(id, CONFIG.health.pedestrianMax);
+    }
+
+    return pedestrianHealth.get(id);
+  }
+
+  function damagePedestrian(id, amount) {
+    const nextHealth = Math.max(0, getPedestrianHealth(id) - amount);
+    pedestrianHealth.set(id, nextHealth);
+    return nextHealth;
+  }
+
+  function damagePlayer(amount) {
+    playerHealthRegenTimer = 0;
+    playerHealth = clamp(playerHealth - amount, 0, CONFIG.health.playerMax);
+    return playerHealth;
+  }
+
+  function updatePlayerHealthRegen(dt) {
+    if (gameOver || playerHealth >= CONFIG.health.playerMax) return;
+
+    playerHealthRegenTimer += dt;
+    if (playerHealthRegenTimer < (CONFIG.health.playerRegenDelay ?? 3)) return;
+
+    playerHealth = clamp(
+      playerHealth + (CONFIG.health.playerRegenPerSecond ?? 16) * dt,
+      0,
+      CONFIG.health.playerMax
+    );
+  }
+
+  function getTrafficHitDamage(speed) {
+    const referenceSpeed = Math.max(
+      0.001,
+      CONFIG.health.playerTrafficSpeedRef ??
+        Math.max(CONFIG.traffic.maxSpeed, CONFIG.traffic.truckMaxSpeed)
+    );
+    const speedRatio = clamp(Math.abs(speed) / referenceSpeed, 0, 1);
+    return THREE.MathUtils.lerp(
+      CONFIG.health.playerTrafficMinDamage ?? 12,
+      CONFIG.health.playerTrafficMaxDamage ?? 90,
+      Math.pow(speedRatio, 1.15)
+    );
+  }
+
+  function getVehiclePedestrianDamage(speed) {
+    const referenceSpeed = Math.max(
+      0.001,
+      CONFIG.health.vehiclePedestrianSpeedRef ?? CONFIG.player.maxSpeed
+    );
+    const speedRatio = clamp(Math.abs(speed) / referenceSpeed, 0, 1);
+    return THREE.MathUtils.lerp(
+      CONFIG.health.vehiclePedestrianMinDamage ?? 26,
+      CONFIG.health.vehiclePedestrianMaxDamage ?? 100,
+      Math.pow(speedRatio, 1.08)
+    );
+  }
 
   function clearShotTracers() {
     while (shotTracers.length) {
@@ -394,17 +497,26 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     destruction.reset();
     pizzaDelivery.reset();
     weapons.reset();
+    weapons.grantWeapon("pistol", null, { equip: true });
+    weapons.grantWeapon("shotgun");
+    weapons.grantWeapon("fusil");
+    weapons.grantWeapon("francotirador");
 
     player.segment = world.getStartRoad();
     player.segmentS = 0;
     player.laneOffset = 0;
     player.laneVelocity = 0;
+    player.handbrakeAmount = 0;
+    player.steer = 0;
     player.speed = 0;
     player.requestedTurn = 0;
     player.pose = world.evaluateSegment(player.segment, 0, 0);
     player.fuel = CONFIG.fuel.start;
     player.canLeaveGasStop = false;
     player.isRefueling = false;
+    inventory.pizzaBoxes = 0;
+    inventory.fuelCans = 0;
+    activeRefuelStationId = null;
 
     playerCar.position.set(player.pose.x, 0, player.pose.z);
     playerCar.rotation.set(0, Math.PI, 0);
@@ -416,66 +528,310 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     money = 1000;
     gameOver = false;
     prevInteract = false;
+    prevSelectSlot1 = false;
+    prevSelectSlot2 = false;
+    prevSelectSlot3 = false;
+    prevSelectSlot4 = false;
+    prevSelectSlot5 = false;
     playerMode = "driving";
     failureLabel = "Chocado";
     characterDestroyed = false;
+    selectedHotbarSlot = 0;
+    inventorySlotItemIds = Array(INVENTORY_SLOT_COUNT).fill(null);
+    inventorySlotItemIds[0] = "pistol";
+    inventorySlotItemIds[1] = "shotgun";
+    inventorySlotItemIds[2] = "fusil";
+    inventorySlotItemIds[3] = "francotirador";
+    shotBloom = 0;
+    playerHealth = CONFIG.health.playerMax;
+    playerHealthRegenTimer = 0;
+    pedestrianHealth.clear();
 
     spawnTraffic();
   }
 
-  function getGasStationAccess() {
-    if (!player.segment || gameOver) return null;
-    if (world.isGasStationSegment(player.segment)) return null;
-    if (playerMode !== "driving") return null;
+  function getWalkingGasStationAccess(playerPose) {
+    if (!playerPose) return null;
 
-    return world.getGasStationAccess(
-      player.pose,
-      player.segment,
-      player.segmentS,
-      player.laneOffset,
-      player.speed
-    );
+    const stationInfos = world.getGasStationInfos?.() ?? [];
+    const maxDistanceSq = 4.8 * 4.8;
+    let best = null;
+    let bestDistanceSq = Infinity;
+
+    for (const station of stationInfos) {
+      for (const pump of station.pumpPositions ?? []) {
+        const distSq = distanceSq2D(playerPose, pump);
+        if (distSq > maxDistanceSq || distSq >= bestDistanceSq) continue;
+
+        bestDistanceSq = distSq;
+        best = {
+          stationId: station.id,
+          brand: station.brand,
+          distanceSq: distSq
+        };
+      }
+    }
+
+    return best;
   }
 
-  function tryEnterGasStation(input) {
+  function buildInventoryEntries() {
+    const entries = [];
+
+    for (const weapon of weapons.getInventoryEntries()) {
+      entries.push({
+        id: weapon.id,
+        kind: "weapon",
+        label: weapon.label,
+        detail: `${weapon.ammo} balas`,
+        weaponId: weapon.id
+      });
+    }
+
+    if (inventory.pizzaBoxes > 0) {
+      entries.push({
+        id: "pizza",
+        kind: "pizza",
+        label: "Pizza",
+        detail: `${inventory.pizzaBoxes}/${inventory.maxPizzaBoxes}`
+      });
+    }
+
+    if (inventory.fuelCans > 0) {
+      entries.push({
+        id: "fuel",
+        kind: "fuel",
+        label: "Gasolina",
+        detail: `${inventory.fuelCans} garrafa${inventory.fuelCans === 1 ? "" : "s"} · ${inventory.fuelCans * inventory.fuelPerCan} L`
+      });
+    }
+
+    return entries;
+  }
+
+  function createInventorySlotFromEntry(entry) {
+    if (!entry) return null;
+
+    if (entry.kind === "weapon") {
+      return {
+        id: entry.id,
+        kind: "weapon",
+        label: entry.label,
+        detail: entry.detail,
+        weaponId: entry.weaponId
+      };
+    }
+
+    if (entry.kind === "pizza") {
+      return {
+        id: entry.id,
+        kind: "pizza",
+        label: entry.label,
+        detail: entry.detail
+      };
+    }
+
+    if (entry.kind === "fuel") {
+      return {
+        id: entry.id,
+        kind: "fuel",
+        label: entry.label,
+        detail: entry.detail
+      };
+    }
+
+    return null;
+  }
+
+  function syncInventorySlotItemIds(entries) {
+    const entryIds = new Set(entries.map((entry) => entry.id));
+
+    inventorySlotItemIds = inventorySlotItemIds.map((itemId) =>
+      entryIds.has(itemId) ? itemId : null
+    );
+
+    for (const entry of entries) {
+      if (inventorySlotItemIds.includes(entry.id)) continue;
+      const emptyIndex = inventorySlotItemIds.indexOf(null);
+      if (emptyIndex === -1) break;
+      inventorySlotItemIds[emptyIndex] = entry.id;
+    }
+  }
+
+  function buildInventorySlots() {
+    const entries = buildInventoryEntries();
+    syncInventorySlotItemIds(entries);
+    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+    return Array.from({ length: INVENTORY_SLOT_COUNT }, (_, index) => {
+      const itemId = inventorySlotItemIds[index];
+      const entry = itemId ? entryById.get(itemId) ?? null : null;
+      return createInventorySlotFromEntry(entry);
+    });
+  }
+
+  function moveInventorySlot(fromIndex, toIndex) {
+    if (
+      !Number.isInteger(fromIndex) ||
+      !Number.isInteger(toIndex) ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= INVENTORY_SLOT_COUNT ||
+      toIndex >= INVENTORY_SLOT_COUNT ||
+      fromIndex === toIndex
+    ) {
+      return false;
+    }
+
+    const fromItemId = inventorySlotItemIds[fromIndex];
+    if (!fromItemId) return false;
+
+    const toItemId = inventorySlotItemIds[toIndex];
+    inventorySlotItemIds[fromIndex] = toItemId ?? null;
+    inventorySlotItemIds[toIndex] = fromItemId;
+    syncSelectedHotbarSlot();
+    return true;
+  }
+
+  function buildHotbarSlots() {
+    const slots = buildInventorySlots();
+    return Array.from({ length: HOTBAR_SLOT_COUNT }, (_, index) => {
+      const entry = slots[index];
+      if (!entry) return null;
+
+      if (entry.kind === "weapon") {
+        return {
+          kind: "weapon",
+          label: entry.label,
+          detail: entry.detail.replace(" balas", ""),
+          weaponId: entry.weaponId
+        };
+      }
+
+      if (entry.kind === "pizza") {
+        return {
+          kind: "pizza",
+          label: entry.label,
+          detail: `${inventory.pizzaBoxes}`
+        };
+      }
+
+      if (entry.kind === "fuel") {
+        return {
+          kind: "fuel",
+          label: entry.label,
+          detail: `${inventory.fuelCans}`
+        };
+      }
+
+      return null;
+    });
+  }
+
+  function syncSelectedHotbarSlot() {
+    const hotbarSlots = buildHotbarSlots();
+    const selectedItem = hotbarSlots[selectedHotbarSlot] ?? null;
+
+    if (selectedItem?.kind === "weapon" && selectedItem.weaponId) {
+      weapons.equipWeapon(selectedItem.weaponId);
+      return;
+    }
+
+    weapons.holsterWeapon();
+  }
+
+  function updateHotbarSelection(input) {
+    const select1Held = !!input.selectWeapon1;
+    const select2Held = !!input.selectWeapon2;
+    const select3Held = !!input.selectWeapon3;
+    const select4Held = !!input.selectWeapon4;
+    const select5Held = !!input.selectWeapon5;
+
+    if (select1Held && !prevSelectSlot1) selectedHotbarSlot = 0;
+    if (select2Held && !prevSelectSlot2) selectedHotbarSlot = 1;
+    if (select3Held && !prevSelectSlot3) selectedHotbarSlot = 2;
+    if (select4Held && !prevSelectSlot4) selectedHotbarSlot = 3;
+    if (select5Held && !prevSelectSlot5) selectedHotbarSlot = 4;
+
+    prevSelectSlot1 = select1Held;
+    prevSelectSlot2 = select2Held;
+    prevSelectSlot3 = select3Held;
+    prevSelectSlot4 = select4Held;
+    prevSelectSlot5 = select5Held;
+
+    syncSelectedHotbarSlot();
+  }
+
+  function getSelectedHotbarItem() {
+    const hotbarSlots = buildHotbarSlots();
+    return {
+      hotbarSlots,
+      selectedItem: hotbarSlots[selectedHotbarSlot] ?? null
+    };
+  }
+
+  function canPourFuelToCar(characterState) {
+    if (playerMode !== "walking") return false;
+    if (!characterState) return false;
+    if (inventory.fuelCans <= 0) return false;
+    if (player.fuel >= CONFIG.fuel.max - 0.001) return false;
+    return canEnterVehicle(characterState);
+  }
+
+  function tryPourFuelToCar(characterState) {
+    if (!canPourFuelToCar(characterState)) return false;
+
+    inventory.fuelCans -= 1;
+    player.fuel = Math.min(CONFIG.fuel.max, player.fuel + inventory.fuelPerCan);
+    return true;
+  }
+
+  function getGasStationAccess() {
+    if (playerMode !== "driving" || gameOver) return null;
+
+    const stationInfos = world.getGasStationInfos?.() ?? [];
+    const maxDistanceSq = 7.2 * 7.2;
+    let best = null;
+    let bestDistanceSq = Infinity;
+
+    for (const station of stationInfos) {
+      for (const pump of station.pumpPositions ?? []) {
+        const distSq = distanceSq2D(player.pose, pump);
+        if (distSq > maxDistanceSq || distSq >= bestDistanceSq) continue;
+
+        bestDistanceSq = distSq;
+        best = {
+          stationId: station.id,
+          brand: station.brand,
+          distanceSq: distSq
+        };
+      }
+    }
+
+    return best;
+  }
+
+  function tryEnterGasStation(input, access = null) {
     const interactPressed = isInteractPressed(input);
     const justPressed = interactPressed && !prevInteract;
-    if (!justPressed) return null;
-    if (playerMode !== "driving") return null;
+    if (!justPressed || playerMode !== "driving" || gameOver) return null;
 
-    const access = getGasStationAccess();
-    if (!access) return null;
+    const currentAccess = access ?? getGasStationAccess();
+    if (!currentAccess) return null;
+    if (Math.abs(player.speed) > 0.035) return null;
+    if (player.fuel >= CONFIG.fuel.max - 0.001) return null;
 
-    const entrySegment = world.createGasStationEntrySegment(
-      player.pose,
-      player.segment,
-      player.segmentS,
-      player.laneOffset,
-      access.stationId
-    );
-
-    if (!entrySegment) return null;
-
-    player.segment = entrySegment;
-    player.segmentS = 0;
-    player.laneOffset = 0;
-    player.laneVelocity = 0;
-    player.requestedTurn = 0;
-    player.speed = Math.min(
-      Math.max(player.speed, 0.07),
-      CONFIG.fuel.serviceLaneMaxSpeed
-    );
-    player.canLeaveGasStop = false;
-    player.isRefueling = false;
-
-    return access;
+    activeRefuelStationId = currentAccess.stationId;
+    player.isRefueling = true;
+    player.speed = 0;
+    return currentAccess;
   }
 
   function canExitVehicle() {
     return (
       playerMode === "driving" &&
       !gameOver &&
-      player.speed <= CONFIG.onFoot.exitVehicleMaxSpeed
+      Math.abs(player.speed) <= CONFIG.onFoot.exitVehicleMaxSpeed
     );
   }
 
@@ -532,14 +888,14 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return candidates;
   }
 
-  function tryExitVehicle(input) {
+  function tryExitVehicle(input, gasAccess = null) {
     const interactPressed = isInteractPressed(input);
     const justPressed = interactPressed && !prevInteract;
 
     if (!justPressed || !canExitVehicle()) return false;
 
-    const gasAccess = getGasStationAccess();
-    if (gasAccess) return false;
+    const currentGasAccess = gasAccess ?? getGasStationAccess();
+    if (currentGasAccess) return false;
 
     const candidates = buildExitCandidates();
     const best = candidates[0];
@@ -547,6 +903,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
     player.speed = 0;
     player.laneVelocity = 0;
+    player.handbrakeAmount = 0;
+    player.steer = 0;
+    player.isRefueling = false;
+    activeRefuelStationId = null;
     playerMode = "walking";
     characterDestroyed = false;
 
@@ -576,6 +936,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     if (!canEnterVehicle(characterState)) return false;
 
     playerMode = "driving";
+    player.isRefueling = false;
+    activeRefuelStationId = null;
     playerCharacter.visible = false;
     characterDestroyed = false;
     return true;
@@ -583,135 +945,203 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
   function updateDrivingInput(input, dt, turnSensitivity = 1) {
     if (gameOver) return;
-
-    const onGasSegment = world.isGasStationSegment(player.segment);
     const outOfFuel = player.fuel <= 0.0001;
-
-    if (onGasSegment) {
-      if (player.segment.type === "gas-stop" && !player.canLeaveGasStop) {
-        player.speed = 0;
-        player.laneVelocity = 0;
-        return;
-      }
-
-      if (!outOfFuel && input.accelerate) {
-        player.speed += CONFIG.player.acceleration * 0.55 * dt * 60;
-      } else {
-        player.speed -= CONFIG.player.drag * 0.9 * dt * 60;
-      }
-
-      if (input.brake) {
-        player.speed -= CONFIG.player.braking * 1.1 * dt * 60;
-      }
-
-      player.speed = clamp(player.speed, 0, CONFIG.fuel.serviceLaneMaxSpeed);
-      player.laneVelocity = 0;
-      return;
-    }
-
-    if (!outOfFuel && input.accelerate) {
-      player.speed += CONFIG.player.acceleration * dt * 60;
-    } else {
-      player.speed -= CONFIG.player.drag * (outOfFuel ? 2.6 : 1) * dt * 60;
-    }
-
-    if (input.brake) {
-      player.speed -= CONFIG.player.braking * dt * 60;
-    }
-
-    player.speed = clamp(player.speed, 0, CONFIG.player.maxSpeed);
-
-    const upcoming = world.getUpcomingIntersectionInfo(
-      player.segment,
-      player.segmentS
+    const usingHandbrake = !!input.handbrake;
+    const desiredSteer =
+      input.left && !input.right ? -1 : input.right && !input.left ? 1 : 0;
+    const steerBlend = Math.min(
+      1,
+      (desiredSteer === 0
+        ? CONFIG.player.steerReturn
+        : CONFIG.player.steerResponse) * dt
     );
 
-    const inChoiceWindow =
-      upcoming && upcoming.remaining <= CONFIG.player.choiceWindow;
+    player.steer += (desiredSteer - player.steer) * steerBlend;
+    const accelStep = CONFIG.player.acceleration * dt * 60;
+    const brakeStep = CONFIG.player.braking * dt * 60;
+    const handbrakeStep = (CONFIG.player.handbrakeBraking ?? (CONFIG.player.braking * 1.8)) * dt * 60;
+    const preStepSpeedRatio = clamp(
+      Math.abs(player.speed) / CONFIG.player.maxSpeed,
+      0,
+      1
+    );
+    const steerAmount = Math.abs(player.steer);
+    const driftSpeedRatio = clamp(
+      (Math.abs(player.speed) - (CONFIG.player.handbrakeDriftMinSpeed ?? 0.18)) /
+        Math.max(0.001, CONFIG.player.maxSpeed - (CONFIG.player.handbrakeDriftMinSpeed ?? 0.18)),
+      0,
+      1
+    );
+    const handbrakeDriftRatio =
+      usingHandbrake
+        ? driftSpeedRatio * clamp((steerAmount - 0.12) / 0.88, 0, 1)
+        : 0;
+    const coastScale = 0.2 + preStepSpeedRatio * 0.45;
+    const coastFactor = Math.max(
+      0,
+      1 - CONFIG.player.coastDrag * coastScale * dt * 60
+    );
+    const dragFactor = Math.max(0, 1 - CONFIG.player.drag * dt * 60);
+    const handbrakeGrip =
+      CONFIG.player.handbrakeDriftGrip ??
+      0.3;
+    const handbrakeDragFactor = Math.max(
+      0,
+      1 -
+        (CONFIG.player.handbrakeDrag ?? (CONFIG.player.drag * 3)) *
+          (1 - handbrakeDriftRatio * (1 - handbrakeGrip)) *
+          dt *
+          60
+    );
+    player.handbrakeAmount +=
+      ((usingHandbrake ? 1 : 0) - player.handbrakeAmount) * Math.min(1, 8 * dt);
 
-    if (inChoiceWindow) {
-      if (input.left && !input.right) {
-        player.requestedTurn = -1;
-      } else if (input.right && !input.left) {
-        player.requestedTurn = 1;
-      } else if (!input.left && !input.right) {
-        player.requestedTurn = 0;
+    if (!outOfFuel && input.accelerate) {
+      if (player.speed < 0) {
+        player.speed += brakeStep * 0.75;
+      } else {
+        player.speed += accelStep;
       }
-
-      player.laneVelocity *= 0.82;
+    } else if (usingHandbrake) {
+      const handbrakeBrakeScale = 1 - handbrakeDriftRatio * 0.9;
+      const handbrakeSlowdown = handbrakeStep * handbrakeBrakeScale;
+      if (player.speed > 0.01) {
+        player.speed = Math.max(0, player.speed - handbrakeSlowdown);
+      } else if (player.speed < -0.01) {
+        player.speed = Math.min(0, player.speed + handbrakeSlowdown);
+      } else {
+        player.speed = 0;
+      }
+    } else if (input.brake) {
+      if (player.speed > 0.02) {
+        player.speed -= brakeStep;
+      } else {
+        player.speed -= accelStep * 0.82;
+      }
     } else {
-      let desiredLaneVelocity = 0;
+      player.speed *= coastFactor;
+    }
 
-      if (input.left && !input.right) {
-        desiredLaneVelocity = -CONFIG.player.laneChangeSpeed * turnSensitivity;
-      }
+    if (usingHandbrake) {
+      player.speed *= handbrakeDragFactor;
+    } else if ((input.accelerate && player.speed > 0) || (input.brake && player.speed < 0)) {
+      player.speed *= dragFactor;
+    }
 
-      if (input.right && !input.left) {
-        desiredLaneVelocity = CONFIG.player.laneChangeSpeed * turnSensitivity;
-      }
+    const speedRatio = clamp(Math.abs(player.speed) / CONFIG.player.maxSpeed, 0, 1);
+    player.speed = clamp(
+      player.speed,
+      -CONFIG.player.reverseMaxSpeed,
+      CONFIG.player.maxSpeed
+    );
+    const steerAuthority =
+      CONFIG.player.steerAtLowSpeed +
+      (CONFIG.player.steerAtHighSpeed - CONFIG.player.steerAtLowSpeed) * speedRatio;
+    const steerMultiplier = usingHandbrake && speedRatio > 0.08
+      ? (CONFIG.player.handbrakeSteerBoost ?? 1.35)
+      : 1;
+    const direction = player.speed < -0.001 ? -1 : 1;
+    const yawStep =
+      player.steer *
+      CONFIG.player.steerRate *
+      steerAuthority *
+      steerMultiplier *
+      turnSensitivity *
+      direction *
+      Math.min(1, 0.25 + speedRatio);
 
-      player.laneVelocity +=
-        (desiredLaneVelocity - player.laneVelocity) *
-        Math.min(1, CONFIG.player.laneChangeResponse * dt);
-
-      player.laneOffset += player.laneVelocity * dt * 60;
-      player.laneOffset = clamp(
-        player.laneOffset,
-        -world.laneClamp,
-        world.laneClamp
+    player.pose.heading = world.normalizeAngle(
+      player.pose.heading + yawStep * dt * 60
+    );
+    const laneTarget =
+      player.steer *
+      Math.abs(player.speed) *
+      (1 + handbrakeDriftRatio * (CONFIG.player.driftSlipBoost ?? 1.4));
+    player.laneVelocity +=
+      (laneTarget - player.laneVelocity) *
+      Math.min(
+        1,
+        (usingHandbrake
+          ? (CONFIG.player.driftSlipResponse ?? 4.1)
+          : 6) * dt
       );
-    }
-
-    if (player.segment.type !== "road") {
-      player.laneOffset +=
-        (0 - player.laneOffset) *
-        Math.min(1, CONFIG.player.laneRecenterInTurn * dt);
-
-      player.laneVelocity *= 0.82;
-    }
   }
 
   function updateDrivingPlayer(dt) {
+    const forwardX = Math.sin(player.pose.heading);
+    const forwardZ = -Math.cos(player.pose.heading);
     const moveDistance = player.speed * dt * 60;
+    const desiredX = player.pose.x + forwardX * moveDistance;
+    const desiredZ = player.pose.z + forwardZ * moveDistance;
+    const collisionRadius =
+      (CONFIG.player.collisionRadiusX + CONFIG.player.collisionRadiusZ) * 0.42;
+    const resolved = world.resolveCharacterMotion(
+      { x: player.pose.x, z: player.pose.z },
+      collisionRadius,
+      desiredX,
+      desiredZ
+    );
 
-    advanceVehicleAlongGraph(player, moveDistance, world, (segment) => {
-      const info = world.getUpcomingIntersectionInfo(segment, segment.length);
-      const valid = info?.validTurns ?? [0];
+    const movedX = resolved.x - player.pose.x;
+    const movedZ = resolved.z - player.pose.z;
+    const actualDistance = Math.hypot(movedX, movedZ);
 
-      if (valid.includes(player.requestedTurn)) return player.requestedTurn;
-      if (valid.includes(0)) return 0;
-      return valid[0] ?? 0;
-    });
-
-    player.pose = getVehiclePose(player, world);
-    playerCar.position.set(player.pose.x, 0, player.pose.z);
-
-    const baseYaw = Math.PI - player.pose.heading;
-    const visualYaw = world.isGasStationSegment(player.segment)
-      ? 0
-      : -player.laneVelocity * 0.25;
-
-    let visualRoll = world.isGasStationSegment(player.segment)
-      ? 0
-      : -player.laneVelocity * 0.14;
-
-    if (player.segment.type === "junction-turn") {
-      visualRoll += -player.segment.turn * 0.12;
+    player.pose.x = resolved.x;
+    player.pose.z = resolved.z;
+    if (actualDistance + 0.001 < Math.abs(moveDistance)) {
+      player.speed *= CONFIG.player.collisionDamping;
     }
 
-    targetEuler.set(0, baseYaw + visualYaw, visualRoll);
+    const speedAbs = Math.abs(player.speed);
+    const driftLiftRatio =
+      player.handbrakeAmount *
+      clamp(
+        (speedAbs - (CONFIG.player.driftVisualSpeedThreshold ?? (80 / 150))) /
+          Math.max(
+            0.001,
+            CONFIG.player.maxSpeed - (CONFIG.player.driftVisualSpeedThreshold ?? (80 / 150))
+          ),
+        0,
+        1
+      ) *
+      clamp(Math.abs(player.steer), 0, 1);
+    const driftSlipRatio = clamp(
+      Math.abs(player.laneVelocity) / Math.max(0.001, CONFIG.player.maxSpeed * 0.7),
+      0,
+      1
+    );
+    const driftVisualRatio = driftLiftRatio * (0.45 + driftSlipRatio * 0.55);
+    const driftDirection =
+      Math.abs(player.steer) > 0.02
+        ? Math.sign(player.steer)
+        : Math.sign(player.laneVelocity || 0);
+    const driftLift = (CONFIG.player.driftVisualLift ?? 0.14) * driftVisualRatio;
+
+    playerCar.position.set(player.pose.x, driftLift, player.pose.z);
+
+    const baseYaw = Math.PI - player.pose.heading;
+    const speedRatio = clamp(player.speed / CONFIG.player.maxSpeed, 0, 1);
+    const visualYaw =
+      -player.steer * CONFIG.player.steerVisualYaw * (0.35 + Math.abs(speedRatio) * 0.65) +
+      driftDirection * (CONFIG.player.driftVisualYaw ?? 0.08) * driftVisualRatio;
+
+    let visualRoll =
+      -player.steer * CONFIG.player.bodyRoll * (0.25 + Math.abs(speedRatio) * 0.75) -
+      driftDirection * (CONFIG.player.driftVisualRoll ?? 0.055) * driftVisualRatio;
+    const visualPitch = -(CONFIG.player.driftVisualPitch ?? 0.03) * driftVisualRatio;
+
+    targetEuler.set(visualPitch, baseYaw + visualYaw, visualRoll);
     targetQuat.setFromEuler(targetEuler);
     playerCar.quaternion.slerp(targetQuat, 0.18);
 
-    score += player.speed * 10;
-    return moveDistance;
+    score += Math.abs(player.speed) * 10;
+    return actualDistance;
   }
 
   function updateFuel(dt, input, moveDistance) {
     if (gameOver) return;
     if (playerMode !== "driving") return;
     if (player.isRefueling) return;
-    if (world.isGasStationSegment(player.segment)) return;
 
     let consumption = moveDistance * CONFIG.fuel.consumptionPerUnit;
     consumption += dt * CONFIG.fuel.idlePerSecond;
@@ -723,11 +1153,29 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     player.fuel = Math.max(0, player.fuel - consumption);
   }
 
-  function updateRefuelState(dt) {
-    player.isRefueling = false;
+  function updateRefuelState(dt, gasAccess = null) {
+    const access = gasAccess ?? getGasStationAccess();
+    const sameStationNearby =
+      !!access &&
+      !!activeRefuelStationId &&
+      access.stationId === activeRefuelStationId;
 
-    if (!player.segment || player.segment.type !== "gas-stop") return;
-    if (player.segmentS < player.segment.length - 0.01) return;
+    if (
+      playerMode !== "driving" ||
+      !sameStationNearby ||
+      Math.abs(player.speed) > 0.045
+    ) {
+      player.isRefueling = false;
+      activeRefuelStationId = null;
+      return;
+    }
+
+    if (player.fuel >= CONFIG.fuel.max - 0.001) {
+      player.fuel = CONFIG.fuel.max;
+      player.isRefueling = false;
+      activeRefuelStationId = null;
+      return;
+    }
 
     player.speed = 0;
     player.isRefueling = true;
@@ -735,12 +1183,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       CONFIG.fuel.max,
       player.fuel + CONFIG.fuel.refuelRate * dt
     );
-
-    if (player.fuel >= CONFIG.fuel.max - 0.001) {
-      player.fuel = CONFIG.fuel.max;
-      player.isRefueling = false;
-      player.canLeaveGasStop = true;
-    }
   }
 
   function chooseTrafficTurn(segment) {
@@ -859,10 +1301,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   function triggerPedestrianImpact(hitVehicle, hitPose, characterState) {
     if (gameOver) return;
 
-    gameOver = true;
-    failureLabel = "Atropellado";
-    characterDestroyed = true;
-    playerCharacter.visible = false;
+    const impactDamage = getTrafficHitDamage(hitVehicle.speed);
+    const remainingHealth = damagePlayer(impactDamage);
 
     hitVehicle.speed = 0;
     hitVehicle.wrecked = true;
@@ -890,13 +1330,25 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       hitPose.heading,
       Math.max(0.95, hitVehicle.speed * 5.4)
     );
+
+    if (remainingHealth > 0) return;
+
+    gameOver = true;
+    failureLabel = "Atropellado";
+    characterDestroyed = true;
+    playerCharacter.visible = false;
   }
 
   function checkDrivingCollisions() {
     const playerOrigin = { x: player.pose.x, z: player.pose.z };
+    const maxCollisionRadius = CONFIG.player.collisionRadiusZ + 5.2;
+    const maxCollisionDistSq = maxCollisionRadius * maxCollisionRadius;
 
     for (const car of traffic) {
       if (car.wrecked) continue;
+      const dx = car.mesh.position.x - playerOrigin.x;
+      const dz = car.mesh.position.z - playerOrigin.z;
+      if (dx * dx + dz * dz > maxCollisionDistSq) continue;
 
       const local = localizePoint(
         { x: car.mesh.position.x, z: car.mesh.position.z },
@@ -921,13 +1373,53 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         break;
       }
     }
+
+    if (gameOver) return;
+
+    for (const ped of world.getPedestrianTargets()) {
+      const dx = ped.x - playerOrigin.x;
+      const dz = ped.z - playerOrigin.z;
+      if (dx * dx + dz * dz > maxCollisionDistSq) continue;
+
+      const local = localizePoint(
+        { x: ped.x, z: ped.z },
+        playerOrigin,
+        player.pose.heading
+      );
+
+      if (
+        Math.abs(local.x) < CONFIG.player.collisionRadiusX + ped.radius &&
+        Math.abs(local.z) < CONFIG.player.collisionRadiusZ + ped.radius
+      ) {
+        const impactDamage = getVehiclePedestrianDamage(player.speed);
+        const remainingHealth = damagePedestrian(ped.id, impactDamage);
+
+        if (remainingHealth <= 0) {
+          const removed = world.destroyPedestrian(ped.id);
+          if (removed) {
+            pedestrianHealth.delete(ped.id);
+            destruction.triggerPedestrianHit(
+              removed,
+              player.pose.heading,
+              Math.max(0.95, Math.abs(player.speed) * 6.1)
+            );
+          }
+        }
+      }
+    }
   }
 
   function checkPedestrianTrafficCollisions(characterState) {
+    const maxCollisionRadius = CONFIG.onFoot.hitboxRadius + 5.2;
+    const maxCollisionDistSq = maxCollisionRadius * maxCollisionRadius;
+
     for (const car of traffic) {
       if (car.wrecked) continue;
 
       const pose = getVehiclePose(car, world);
+      const dx = pose.x - characterState.x;
+      const dz = pose.z - characterState.z;
+      if (dx * dx + dz * dz > maxCollisionDistSq) continue;
 
       const local = localizePoint(
         { x: characterState.x, z: characterState.z },
@@ -971,8 +1463,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function triggerShotOnPedestrian(hit) {
+    const remainingHealth = damagePedestrian(hit.id, hit.damage ?? 0);
+    if (remainingHealth > 0) return;
+
     const removed = world.destroyPedestrian(hit.id);
     if (!removed) return;
+
+    pedestrianHealth.delete(hit.id);
 
     destruction.triggerPedestrianHit(
       removed,
@@ -981,39 +1478,138 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     );
   }
 
-  function getShotOriginAndDirection(characterState) {
+  function getShotOriginAndDirection(shot, characterState, aimControl = null) {
+    const hasAimDirection =
+      typeof aimControl?.aimDirection?.x === "number" &&
+      typeof aimControl?.aimDirection?.y === "number" &&
+      typeof aimControl?.aimDirection?.z === "number";
+    const hasAimRayOrigin =
+      typeof aimControl?.aimRayOrigin?.x === "number" &&
+      typeof aimControl?.aimRayOrigin?.y === "number" &&
+      typeof aimControl?.aimRayOrigin?.z === "number";
+    const aimHeading = typeof aimControl?.aimHeading === "number"
+      ? aimControl.aimHeading
+      : characterState.heading;
+    const spreadProfile = getShotSpreadProfile(shot, characterState, aimControl);
+    const spreadRadius = Math.sqrt(Math.random()) * spreadProfile.maxRadius;
+    const spreadAngle = Math.random() * Math.PI * 2;
+    const spreadX = Math.cos(spreadAngle) * spreadRadius;
+    const spreadY = Math.sin(spreadAngle) * spreadRadius;
     const muzzlePose = getPlayerCharacterWeaponMuzzlePose(playerCharacter);
+    const aimRayOrigin = hasAimRayOrigin
+      ? new THREE.Vector3(
+          aimControl.aimRayOrigin.x,
+          aimControl.aimRayOrigin.y,
+          aimControl.aimRayOrigin.z
+        )
+      : null;
 
-    if (muzzlePose) {
+    function withSpread(direction) {
+      const forward = direction.clone().normalize();
+      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+      if (right.lengthSq() < 0.0001) {
+        right.set(1, 0, 0);
+      } else {
+        right.normalize();
+      }
+      const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+      return forward
+        .addScaledVector(right, spreadX)
+        .addScaledVector(up, spreadY)
+        .normalize();
+    }
+
+    function buildAimTrace(tracerForward3D) {
       const flatForward = new THREE.Vector3(
-        muzzlePose.forward.x,
+        tracerForward3D.x,
         0,
-        muzzlePose.forward.z
+        tracerForward3D.z
       );
 
-      if (flatForward.lengthSq() > 0.0001) {
-        flatForward.normalize();
+      if (flatForward.lengthSq() <= 0.0001) {
+        return null;
+      }
 
+      flatForward.normalize();
+
+      const aimStart = aimRayOrigin ?? (
+        muzzlePose
+          ? new THREE.Vector3(
+              muzzlePose.position.x,
+              muzzlePose.position.y,
+              muzzlePose.position.z
+            )
+          : new THREE.Vector3(
+              characterState.x + Math.sin(aimHeading) * 0.72,
+              1.46 + (characterState.jumpOffset ?? 0),
+              characterState.z - Math.cos(aimHeading) * 0.72
+            )
+      );
+
+      return {
+        aimStart,
+        aimOrigin2D: {
+          x: aimStart.x,
+          z: aimStart.z
+        },
+        aimForwardX: flatForward.x,
+        aimForwardZ: flatForward.z,
+        aimRightX: -flatForward.z,
+        aimRightZ: flatForward.x
+      };
+    }
+
+    if (muzzlePose) {
+      const tracerForward3D = hasAimDirection
+        ? withSpread(new THREE.Vector3(
+            aimControl.aimDirection.x,
+            aimControl.aimDirection.y,
+            aimControl.aimDirection.z
+          ))
+        : withSpread(muzzlePose.forward.clone());
+      const aimTrace = buildAimTrace(tracerForward3D);
+
+      if (aimTrace) {
         return {
-          origin2D: {
-            x: muzzlePose.position.x,
-            z: muzzlePose.position.z
-          },
+          origin2D: aimTrace.aimOrigin2D,
           start3D: new THREE.Vector3(
             muzzlePose.position.x,
             muzzlePose.position.y,
             muzzlePose.position.z
           ),
-          forwardX: flatForward.x,
-          forwardZ: flatForward.z,
-          tracerForward3D: flatForward.clone()
+          forwardX: aimTrace.aimForwardX,
+          forwardZ: aimTrace.aimForwardZ,
+          rightX: aimTrace.aimRightX,
+          rightZ: aimTrace.aimRightZ,
+          tracerForward3D,
+          aimStart: aimTrace.aimStart
         };
       }
     }
 
-    const heading = characterState.heading;
-    const forwardX = Math.sin(heading);
-    const forwardZ = -Math.cos(heading);
+    const forwardX = Math.sin(aimHeading);
+    const forwardZ = -Math.cos(aimHeading);
+    const tracerForward3D = hasAimDirection
+      ? withSpread(new THREE.Vector3(
+          aimControl.aimDirection.x,
+          aimControl.aimDirection.y,
+          aimControl.aimDirection.z
+        ))
+      : withSpread(new THREE.Vector3(forwardX, 0, forwardZ));
+    const aimTrace = buildAimTrace(tracerForward3D);
+
+    if (aimTrace) {
+      return {
+        origin2D: aimTrace.aimOrigin2D,
+        start3D: aimTrace.aimStart.clone(),
+        forwardX: aimTrace.aimForwardX,
+        forwardZ: aimTrace.aimForwardZ,
+        rightX: aimTrace.aimRightX,
+        rightZ: aimTrace.aimRightZ,
+        tracerForward3D,
+        aimStart: aimTrace.aimStart
+      };
+    }
 
     return {
       origin2D: {
@@ -1027,16 +1623,29 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       ),
       forwardX,
       forwardZ,
-      tracerForward3D: new THREE.Vector3(forwardX, 0, forwardZ).normalize()
+      rightX: -forwardZ,
+      rightZ: forwardX,
+      tracerForward3D,
+      aimStart: new THREE.Vector3(
+        characterState.x + forwardX * 0.72,
+        1.46 + (characterState.jumpOffset ?? 0),
+        characterState.z + forwardZ * 0.72
+      )
     };
   }
 
-  function fireWeapon(shot, characterState) {
-    const shotPose = getShotOriginAndDirection(characterState);
-    const { origin2D, start3D, forwardX, forwardZ, tracerForward3D } = shotPose;
-
-    const rightX = Math.cos(characterState.heading);
-    const rightZ = Math.sin(characterState.heading);
+  function fireWeapon(shot, characterState, aimControl = null) {
+    const shotPose = getShotOriginAndDirection(shot, characterState, aimControl);
+    const {
+      origin2D,
+      start3D,
+      forwardX,
+      forwardZ,
+      rightX,
+      rightZ,
+      tracerForward3D,
+      aimStart
+    } = shotPose;
 
     let bestHit = null;
 
@@ -1059,8 +1668,11 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           z: ped.z,
           forward,
           lateral,
-          heading: characterState.heading,
-          intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02
+          heading: typeof aimControl?.aimHeading === "number"
+            ? aimControl.aimHeading
+            : characterState.heading,
+          intensity: shot.weaponId === "shotgun" ? 1.22 : 1.02,
+          damage: shot.damage ?? 0
         };
       }
     }
@@ -1091,15 +1703,15 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     }
 
     const visibleDistance = bestHit
-      ? Math.min(bestHit.forward, shot.visualTracerLength ?? 9)
-      : (shot.visualTracerLength ?? 9);
+      ? Math.min(bestHit.forward, shot.range)
+      : shot.range;
 
-    const tracerEnd = start3D.clone().addScaledVector(
+    const tracerTarget = aimStart.clone().addScaledVector(
       tracerForward3D,
       Math.max(0.2, visibleDistance)
     );
 
-    spawnShotTracer(start3D, tracerEnd, shot);
+    spawnShotTracer(start3D, tracerTarget, shot);
 
     if (!bestHit) return;
 
@@ -1116,19 +1728,83 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     );
   }
 
+  function getShotSpreadProfile(shot, characterState, aimControl = null) {
+    const aimBlend = typeof aimControl?.aimBlend === "number"
+      ? clamp(aimControl.aimBlend, 0, 1)
+      : 0;
+    const crouchBlend = clamp(characterState?.crouchBlend ?? 0, 0, 1);
+    const planarSpeed = Math.max(0, characterState?.planarSpeed ?? 0);
+    const moveFactor = Math.min(1.4, planarSpeed / CONFIG.onFoot.runSpeed);
+    const edgePenalty = !aimControl?.firstPerson
+      ? clamp(aimControl?.cursorEdgePressure ?? 0, 0, 1)
+      : 0;
+    const weapon = getWeaponAttributes(shot?.weaponId);
+    const baseRadius = weapon?.spreadBaseRadius ?? 0.025;
+    const bloomRadius = weapon?.spreadBloomRadius ?? 0.026;
+    const hipFireMultiplier = weapon?.hipFireMultiplier ?? 1;
+    const aimedSpreadMultiplier = weapon?.aimedSpreadMultiplier ?? 1;
+    const movementMultiplier = 1 + moveFactor * 1.05;
+    const crouchMultiplier = THREE.MathUtils.lerp(1, 0.64, crouchBlend);
+    const aimMultiplier = THREE.MathUtils.lerp(1, 0.3, aimBlend);
+    const weaponAimTuningMultiplier = THREE.MathUtils.lerp(
+      hipFireMultiplier,
+      aimedSpreadMultiplier,
+      aimBlend
+    );
+    const edgeMultiplier = 1 + edgePenalty * 1.25;
+    const focusBlend = aimBlend * crouchBlend;
+    const focusMultiplier = THREE.MathUtils.lerp(1, 0.12, focusBlend);
+    const isLockedFocus =
+      focusBlend > 0.9 &&
+      planarSpeed < CONFIG.onFoot.walkSpeed * 0.14;
+    const bloomMultiplier = 1 + shotBloom * bloomRadius;
+
+    const maxRadius = isLockedFocus
+      ? 0
+      : baseRadius *
+        movementMultiplier *
+        crouchMultiplier *
+        aimMultiplier *
+        weaponAimTuningMultiplier *
+        focusMultiplier *
+        bloomMultiplier *
+        edgeMultiplier;
+
+    return {
+      maxRadius,
+      edgePenalty,
+      moveFactor,
+      aimBlend,
+      crouchBlend,
+      bloom: shotBloom
+    };
+  }
+
+  function applyShotBloom(shot) {
+    const weapon = getWeaponAttributes(shot?.weaponId);
+    shotBloom = clamp(
+      shotBloom + (weapon?.bloomKick ?? 0.22),
+      0,
+      MAX_SHOT_BLOOM
+    );
+  }
+
+  function recoverShotBloom(dt, characterState, controlContext = null) {
+    const aimBlend = clamp(controlContext?.aimBlend ?? 0, 0, 1);
+    const crouchBlend = clamp(characterState?.crouchBlend ?? 0, 0, 1);
+    const moveFactor = Math.min(
+      1,
+      Math.max(0, characterState?.planarSpeed ?? 0) / CONFIG.onFoot.runSpeed
+    );
+    const recoverySpeed =
+      THREE.MathUtils.lerp(1.9, 4.7, aimBlend) *
+      THREE.MathUtils.lerp(1, 1.35, crouchBlend) *
+      THREE.MathUtils.lerp(1, 0.72, moveFactor);
+
+    shotBloom = clamp(shotBloom - dt * recoverySpeed, 0, MAX_SHOT_BLOOM);
+  }
+
   function getTurnSignal(upcomingIntersection) {
-    if (player.segment?.type === "junction-turn") {
-      return player.segment.turn;
-    }
-
-    if (
-      upcomingIntersection &&
-      upcomingIntersection.remaining <= CONFIG.player.choiceWindow &&
-      upcomingIntersection.remaining > 3
-    ) {
-      return player.requestedTurn;
-    }
-
     return 0;
   }
 
@@ -1136,10 +1812,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     let moveDistance = 0;
     let upcomingIntersection = null;
     let gasAccess = null;
+    let walkingGasAccess = null;
     let missionInteraction = null;
     let inWeaponShopCounter = false;
 
     if (!gameOver) {
+      updateHotbarSelection(input);
+
       if (playerMode === "driving") {
         weapons.update(dt, input, {
           playerMode,
@@ -1153,22 +1832,19 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         );
         updateDrivingInput(input, dt, turnSensitivity);
 
-        const enteredStation = tryEnterGasStation(input);
+        gasAccess = getGasStationAccess();
+
+        const enteredStation = tryEnterGasStation(input, gasAccess);
         if (!enteredStation) {
-          tryExitVehicle(input);
+          tryExitVehicle(input, gasAccess);
         }
 
         if (playerMode === "driving") {
           moveDistance = updateDrivingPlayer(dt);
-          updateFuel(dt, input, moveDistance);
-          updateRefuelState(dt);
-
-          upcomingIntersection = world.getUpcomingIntersectionInfo(
-            player.segment,
-            player.segmentS
-          );
-
           gasAccess = getGasStationAccess();
+          updateFuel(dt, input, moveDistance);
+          updateRefuelState(dt, gasAccess);
+          upcomingIntersection = null;
         }
       } else {
         const characterStateNow = character.update(
@@ -1189,6 +1865,8 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           playerMode,
           characterStateNow
         );
+        walkingGasAccess = getWalkingGasStationAccess(characterStateNow);
+        const { selectedItem } = getSelectedHotbarItem();
 
         const interactPressed = isInteractPressed(input);
         const justPressed = interactPressed && !prevInteract;
@@ -1198,6 +1876,16 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           if (purchase.success) {
             money = purchase.money;
           }
+        } else if (justPressed && walkingGasAccess) {
+          if (
+            inventory.fuelCans < inventory.maxFuelCans &&
+            money >= (CONFIG.fuel.portableCanPrice ?? 16)
+          ) {
+            inventory.fuelCans += 1;
+            money -= (CONFIG.fuel.portableCanPrice ?? 16);
+          }
+        } else if (justPressed && selectedItem?.kind === "fuel") {
+          tryPourFuelToCar(characterStateNow);
         } else if (justPressed && missionInteraction) {
           const result = pizzaDelivery.handleInteract(playerMode, characterStateNow);
           if (result.handled && result.type === "deliver") {
@@ -1208,14 +1896,18 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         }
 
         const missionStateNow = pizzaDelivery.getState();
+        const hotbarStateNow = getSelectedHotbarItem();
         const shot = weapons.tryFire({
           playerMode,
-          blocked: missionStateNow.carryingPizza
+          blocked: hotbarStateNow.selectedItem?.kind !== "weapon"
         });
 
         if (shot) {
-          fireWeapon(shot, characterStateNow);
+          applyShotBloom(shot);
+          fireWeapon(shot, characterStateNow, controlContext);
         }
+
+        recoverShotBloom(dt, characterStateNow, controlContext);
       }
 
       if (!gameOver) {
@@ -1227,44 +1919,30 @@ export function createGame(scene, playerCar, playerCharacter, world) {
           checkPedestrianTrafficCollisions(character.getState());
         }
       }
+
+      updatePlayerHealthRegen(dt);
+
+      if (input.debugDamage) {
+        damagePlayer(18);
+      }
     } else {
       weapons.update(dt, input, {
         playerMode,
         inShop: false
       });
+      shotBloom = clamp(shotBloom - dt * 3.2, 0, MAX_SHOT_BLOOM);
     }
 
     updateShotTracers(dt);
     destruction.update(dt);
 
     const characterState = character.getState();
-    const missionState = pizzaDelivery.getState();
-    const fuelRatio = player.fuel / CONFIG.fuel.max;
-    const inGasStation = playerMode === "driving" && world.isGasStationSegment(player.segment);
     const weaponHud = weapons.getHUDState(inWeaponShopCounter);
-
-    let actionPrompt = "";
-
-    if (!gameOver) {
-      if (playerMode === "walking") {
-        if (inWeaponShopCounter) {
-          actionPrompt = weapons.getShopPrompt(money);
-        } else if (missionInteraction?.prompt) {
-          actionPrompt = missionInteraction.prompt;
-        } else if (canEnterVehicle(characterState)) {
-          actionPrompt = "Entrar al coche [E]";
-        } else if (weaponHud.hasEquippedWeapon && !missionState.carryingPizza) {
-          actionPrompt = `Disparar [Click] · ${weaponHud.equippedShortLabel} · ${weaponHud.ammo} balas`;
-        }
-      } else if (gasAccess) {
-        actionPrompt = `Entrar a gasolinera [E] · ${gasAccess.brand}`;
-      } else if (canExitVehicle()) {
-        actionPrompt = "Salir del coche [E]";
-      }
-    }
-
-    prevInteract = isInteractPressed(input);
-
+    const shotSpreadProfile = getShotSpreadProfile(
+      { weaponId: weaponHud?.equippedId },
+      characterState,
+      controlContext
+    );
     const activePose =
       playerMode === "walking"
         ? {
@@ -1273,6 +1951,71 @@ export function createGame(scene, playerCar, playerCharacter, world) {
             heading: characterState.heading
           }
         : player.pose;
+    const missionState = pizzaDelivery.getState();
+    const fuelRatio = player.fuel / CONFIG.fuel.max;
+    const healthRatio = getPlayerHealthRatio();
+    const pedestrianBarTargets = world.getPedestrianTargets()
+      .filter((ped) => {
+        const dx = ped.x - activePose.x;
+        const dz = ped.z - activePose.z;
+        return dx * dx + dz * dz <= Math.pow(CONFIG.health.pedestrianBarDistance ?? 58, 2);
+      })
+      .map((ped) => ({
+        id: ped.id,
+        x: ped.x,
+        y: ped.y ?? 2.05,
+        z: ped.z,
+        pct: Math.round((getPedestrianHealth(ped.id) / CONFIG.health.pedestrianMax) * 100)
+      }));
+    const inGasStation = !!gasAccess || player.isRefueling;
+    const vehicleSurface =
+      playerMode === "driving"
+        ? (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road")
+        : (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road");
+    const inventorySlots = buildInventorySlots();
+    const portableFuelLiters = inventory.fuelCans * inventory.fuelPerCan;
+    const hotbarState = getSelectedHotbarItem();
+
+    let actionPrompt = "";
+
+    if (!gameOver) {
+      if (playerMode === "walking") {
+        if (inWeaponShopCounter) {
+          actionPrompt = weapons.getShopPrompt(money);
+        } else if (walkingGasAccess) {
+          if (inventory.fuelCans >= inventory.maxFuelCans) {
+            actionPrompt = `Garrafas al máximo · ${walkingGasAccess.brand}`;
+          } else if (money < (CONFIG.fuel.portableCanPrice ?? 16)) {
+            actionPrompt = `Falta dinero para garrafa · ${walkingGasAccess.brand}`;
+          } else {
+            actionPrompt =
+              `Llenar garrafa [E] · ${inventory.fuelPerCan} L · $${CONFIG.fuel.portableCanPrice ?? 16} · ${walkingGasAccess.brand}`;
+          }
+        } else if (hotbarState.selectedItem?.kind === "fuel" && canPourFuelToCar(characterState)) {
+          actionPrompt = `Verter garrafa [E] · +${inventory.fuelPerCan} L al coche`;
+        } else if (missionInteraction?.prompt) {
+          actionPrompt = missionInteraction.prompt;
+        } else if (canEnterVehicle(characterState)) {
+          actionPrompt = "Entrar al coche [E]";
+        } else if (weaponHud.hasEquippedWeapon && hotbarState.selectedItem?.kind === "weapon") {
+          actionPrompt = `Disparar [Click] · ${weaponHud.equippedShortLabel} · ${weaponHud.ammo} balas`;
+        }
+      } else if (gasAccess) {
+        if (player.fuel >= CONFIG.fuel.max - 0.001) {
+          actionPrompt = `Depósito lleno · ${gasAccess.brand}`;
+        } else if (Math.abs(player.speed) > 0.035) {
+          actionPrompt = `Frena junto al surtidor · ${gasAccess.brand}`;
+        } else if (player.isRefueling) {
+          actionPrompt = `Echando gasolina... · ${gasAccess.brand}`;
+        } else {
+          actionPrompt = `Echar gasolina [E] · ${gasAccess.brand}`;
+        }
+      } else if (canExitVehicle()) {
+        actionPrompt = "Salir del coche [E]";
+      }
+    }
+
+    prevInteract = isInteractPressed(input);
 
     const walkingSpeedKmh = Math.round(characterState.planarSpeed * 70);
 
@@ -1285,23 +2028,35 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       playerMode,
       playerPose: activePose,
       vehiclePose: player.pose,
+      vehicleSurface,
       upcomingIntersection: playerMode === "driving" ? upcomingIntersection : null,
 
       speedKmh:
         playerMode === "walking"
           ? walkingSpeedKmh
-          : Math.round(player.speed * 150),
+          : Math.round(Math.abs(player.speed) * 150),
 
       rawSpeed:
         playerMode === "walking"
           ? characterState.planarSpeed
-          : player.speed,
+          : Math.abs(player.speed),
+
+      steer:
+        playerMode === "driving"
+          ? player.steer
+          : 0,
 
       isBraking:
         playerMode === "driving" &&
         !gameOver &&
-        input.brake &&
-        player.speed > 0.01,
+        (input.brake || input.handbrake) &&
+        Math.abs(player.speed) > 0.01,
+
+      isHandbraking:
+        playerMode === "driving" &&
+        !gameOver &&
+        !!input.handbrake &&
+        Math.abs(player.speed) > 0.01,
 
       isAccelerating:
         playerMode === "driving" &&
@@ -1319,6 +2074,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       lowFuel: fuelRatio <= CONFIG.fuel.lowThreshold,
       criticalFuel: fuelRatio <= CONFIG.fuel.criticalThreshold,
       outOfFuel: player.fuel <= 0.001,
+      healthHud: {
+        current: Math.round(playerHealth),
+        max: CONFIG.health.playerMax,
+        pct: Math.round(healthRatio * 100),
+        criticalStartPct: Math.round((CONFIG.health.playerCriticalStart ?? 0.7) * 100)
+      },
+      pedestrianHealthHud: pedestrianBarTargets,
 
       isRefueling: player.isRefueling,
       inGasStation,
@@ -1326,16 +2088,63 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       actionPrompt,
       missionState,
       weaponHud,
+      inventoryHud: {
+        itemCount: inventorySlots.filter(Boolean).length,
+        pizzaBoxes: inventory.pizzaBoxes,
+        pizzaCapacity: inventory.maxPizzaBoxes,
+        fuelCans: inventory.fuelCans,
+        portableFuelLiters,
+        slots: inventorySlots.map((slot, index) => ({
+          index,
+          key: index < HOTBAR_SLOT_COUNT ? index + 1 : null,
+          label: slot?.label ?? "",
+          detail: slot?.detail ?? "",
+          kind: slot?.kind ?? null,
+          empty: !slot,
+          active: index === selectedHotbarSlot
+        })),
+        selectedSlot: selectedHotbarSlot,
+        activeItemKind: hotbarState.selectedItem?.kind ?? null,
+        activeItemLabel: hotbarState.selectedItem?.label ?? "",
+        hotbarSlots: hotbarState.hotbarSlots.map((slot, index) => ({
+          index,
+          key: index + 1,
+          label: slot?.label ?? "",
+          detail: slot?.detail ?? "",
+          empty: !slot
+        }))
+      },
 
       characterState: {
         visible: playerMode === "walking" && !characterDestroyed,
         x: characterState.x,
         z: characterState.z,
         heading: characterState.heading,
+        aimHeading: typeof controlContext?.aimHeading === "number"
+          ? controlContext.aimHeading
+          : characterState.heading,
+        aimPitch: typeof controlContext?.aimPitch === "number"
+          ? controlContext.aimPitch
+          : 0,
+        aiming: !!controlContext?.aiming,
+        aimBlend: typeof controlContext?.aimBlend === "number"
+          ? controlContext.aimBlend
+          : 0,
+        shotSpread: shotSpreadProfile.maxRadius,
+        shotSpreadMoveFactor: shotSpreadProfile.moveFactor,
+        shotSpreadCrouchBlend: shotSpreadProfile.crouchBlend,
+        shotSpreadEdgePenalty: shotSpreadProfile.edgePenalty,
+        shotBloom: shotSpreadProfile.bloom,
+        cursorEdgePressure: typeof controlContext?.cursorEdgePressure === "number"
+          ? controlContext.cursorEdgePressure
+          : 0,
+        crouching: !!characterState.crouching,
+        crouchBlend: characterState.crouchBlend ?? 0,
         planarSpeed: characterState.planarSpeed,
         jumpOffset: characterState.jumpOffset,
         onGround: characterState.onGround,
-        carryingPizza: missionState.carryingPizza,
+        carryingPizza:
+          hotbarState.selectedItem?.kind === "pizza" && inventory.pizzaBoxes > 0,
         weapon: weapons.getVisualState()
       }
     };
@@ -1343,6 +2152,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
 
   return {
     reset,
-    update
+    update,
+    moveInventorySlot
   };
 }

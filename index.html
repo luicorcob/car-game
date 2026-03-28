@@ -22,10 +22,11 @@
     <div class="panel info">
       <h1>Road Driver 3D</h1>
       <p><strong>Coche:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
-      <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar.</p>
+      <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar, C para agacharse.</p>
       <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
       <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
-      <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
+      <p><strong>Inventario:</strong> 1/2/3/4/5 cambia slot, I abre la mochila y Q/F cambia producto en tienda.</p>
+      <p><strong>Test vida:</strong> ¡ baja vida temporalmente para probar daÃ±o, regeneraciÃ³n y efecto rojo.</p>
       <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
@@ -46,6 +47,22 @@
     <div class="mission-footer">
       <span id="mission-meta">Sin pedido</span>
       <span id="mission-count">0 entregas</span>
+    </div>
+  </div>
+
+  <div id="health-card" class="panel health-card normal">
+    <div class="health-header">
+      <span class="health-title">VIDA</span>
+      <span id="health-percent" class="health-percent">100%</span>
+    </div>
+
+    <div class="health-bar-shell">
+      <div id="health-bar-fill" class="health-bar-fill"></div>
+    </div>
+
+    <div class="health-meta">
+      <span id="health-value">100 / 100</span>
+      <span id="health-state">Completa</span>
     </div>
   </div>
 
@@ -72,6 +89,29 @@
     <div id="weapon-state" class="weapon-state">Compra en Armería Atlas</div>
   </div>
 
+  <div id="hotbar" class="hotbar">
+    <div class="hotbar-slot"><span class="hotbar-key">1</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">2</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">3</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">4</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">5</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+  </div>
+
+  <div id="inventory-menu" class="inventory-menu hidden">
+    <div class="inventory-menu-shell">
+      <div class="inventory-menu-top">
+        <div>
+          <div class="inventory-menu-kicker">MOCHILA</div>
+          <h2>Inventario</h2>
+        </div>
+        <div class="inventory-menu-close">Pulsa I para cerrar</div>
+      </div>
+      <div id="inventory-menu-summary" class="inventory-menu-summary">Pizzas 0/3 · Gasolina 0 L</div>
+      <div class="inventory-menu-section-title">Mochila</div>
+      <div id="inventory-menu-grid" class="inventory-menu-grid"></div>
+    </div>
+  </div>
+
   <div id="nav-map-card" class="panel nav-map-card">
     <div class="nav-map-header">
       <span id="nav-map-title">Mapa de ciudad</span>
@@ -91,6 +131,21 @@
   </div>
 
   <div id="prompt" class="prompt hidden"></div>
+  <div id="ped-health-layer" class="ped-health-layer" aria-hidden="true"></div>
+  <div id="damage-overlay" class="damage-overlay hidden" aria-hidden="true"></div>
+  <div id="crosshair" class="crosshair hidden" aria-hidden="true">
+    <span class="crosshair-ring"></span>
+    <span class="crosshair-dot"></span>
+  </div>
+  <div id="sniper-scope" class="sniper-scope hidden" aria-hidden="true">
+    <div class="sniper-scope-vignette"></div>
+    <div class="sniper-scope-circle">
+      <span class="sniper-scope-line v"></span>
+      <span class="sniper-scope-line h"></span>
+      <span class="sniper-scope-center"></span>
+      <span id="sniper-scope-zoom" class="sniper-scope-zoom">x3.0</span>
+    </div>
+  </div>
 
   <div id="game-over" class="panel game-over hidden">
     <h2>Fin</h2>

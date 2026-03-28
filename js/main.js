@@ -16,6 +16,7 @@ import {
   resetPlayerCharacterVisual
 } from "./player/characterVisual.js";
 import { createGame } from "./game.js";
+import { getWeaponAttributes } from "./combat/weaponAttributes.js";
 
 const canvas = document.querySelector("#game");
 const speedEl = document.querySelector("#speed");
@@ -51,10 +52,27 @@ const missionObjectiveEl = document.querySelector("#mission-objective");
 const missionMetaEl = document.querySelector("#mission-meta");
 const missionCountEl = document.querySelector("#mission-count");
 
+const healthCardEl = document.querySelector("#health-card");
+const healthPercentEl = document.querySelector("#health-percent");
+const healthValueEl = document.querySelector("#health-value");
+const healthStateEl = document.querySelector("#health-state");
+const healthBarFillEl = document.querySelector("#health-bar-fill");
+const pedHealthLayerEl = document.querySelector("#ped-health-layer");
+const damageOverlayEl = document.querySelector("#damage-overlay");
+
 const weaponCardEl = document.querySelector("#weapon-card");
 const weaponNameEl = document.querySelector("#weapon-name");
 const weaponAmmoEl = document.querySelector("#weapon-ammo");
 const weaponStateEl = document.querySelector("#weapon-state");
+const hotbarEl = document.querySelector("#hotbar");
+const hotbarSlotEls = Array.from(document.querySelectorAll(".hotbar-slot"));
+const inventoryMenuEl = document.querySelector("#inventory-menu");
+const inventoryMenuSummaryEl = document.querySelector("#inventory-menu-summary");
+const inventoryMenuGridEl = document.querySelector("#inventory-menu-grid");
+const crosshairEl = document.querySelector("#crosshair");
+const crosshairRingEl = document.querySelector(".crosshair-ring");
+const sniperScopeEl = document.querySelector("#sniper-scope");
+const sniperScopeZoomEl = document.querySelector("#sniper-scope-zoom");
 
 const promptEl = document.querySelector("#prompt");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
@@ -94,6 +112,53 @@ const camera = new THREE.PerspectiveCamera(
 
 const clock = new THREE.Clock();
 let fpsSmoothed = 0;
+let inventoryMenuOpen = false;
+let lastPlayerMode = "driving";
+let draggedInventorySlotIndex = null;
+let crosshairAnimTime = 0;
+let latestGameState = null;
+const SNIPER_SCOPE_ZOOM_STEPS = [1, 0.78, 0.58, 0.42];
+let sniperScopeZoomIndex = 0;
+let sniperScopeForcedFirstPerson = false;
+const pedestrianHealthBarEls = new Map();
+const projectedPedPosition = new THREE.Vector3();
+
+function isSniperScopeActive(state) {
+  const weaponId = state.weaponHud?.equippedId ?? null;
+  const weaponAttributes = getWeaponAttributes(weaponId);
+  const aimBlend = state.characterState?.aimBlend ?? 0;
+  return (
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !state.gameOver &&
+    state.playerMode === "walking" &&
+    state.weaponHud?.hasEquippedWeapon &&
+    state.inventoryHud?.activeItemKind === "weapon" &&
+    !!weaponAttributes?.useScopeOverlay &&
+    aimBlend > 0.08
+  );
+}
+
+function getSniperScopeFov(state) {
+  const weaponId = state.weaponHud?.equippedId ?? null;
+  const weaponAttributes = getWeaponAttributes(weaponId);
+  const baseFov = weaponAttributes?.scopeFov ?? 22;
+  const zoomStep = SNIPER_SCOPE_ZOOM_STEPS[sniperScopeZoomIndex] ?? 1;
+  return baseFov * zoomStep;
+}
+
+function getSniperScopeZoomLabel(state) {
+  const fov = getSniperScopeFov(state);
+  const zoom = 68 / Math.max(1, fov);
+  return `x${zoom.toFixed(1)}`;
+}
+
+function normalizeAngle(angle) {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
 
 const input = createInput();
 const world = createWorld(scene);
@@ -107,6 +172,102 @@ scene.add(playerCharacter);
 
 const game = createGame(scene, playerCar, playerCharacter, world);
 
+function clearInventoryDragState() {
+  draggedInventorySlotIndex = null;
+  hotbarEl.classList.remove("inventory-drag-enabled");
+  hotbarSlotEls.forEach((slotEl) => {
+    slotEl.classList.remove("dragging", "drag-over");
+  });
+  inventoryMenuGridEl.querySelectorAll(".inventory-slot").forEach((slotEl) => {
+    slotEl.classList.remove("dragging", "drag-over");
+  });
+}
+
+function getInventorySlotElement(target) {
+  return target instanceof Element ? target.closest("[data-slot-index]") : null;
+}
+
+function getInventorySlotIndex(target) {
+  const slotEl = getInventorySlotElement(target);
+  if (!slotEl) return null;
+  const rawIndex = Number(slotEl.dataset.slotIndex);
+  return Number.isInteger(rawIndex) ? rawIndex : null;
+}
+
+function handleInventoryDragStart(event) {
+  const slotIndex = getInventorySlotIndex(event.target);
+  if (slotIndex === null) {
+    event.preventDefault();
+    return;
+  }
+
+  const slotEl = getInventorySlotElement(event.target);
+  if (!slotEl || slotEl.dataset.empty === "true") {
+    event.preventDefault();
+    return;
+  }
+
+  draggedInventorySlotIndex = slotIndex;
+  hotbarEl.classList.add("inventory-drag-enabled");
+  slotEl.classList.add("dragging");
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(slotIndex));
+  }
+}
+
+function handleInventoryDragOver(event) {
+  if (draggedInventorySlotIndex === null) return;
+  const slotEl = getInventorySlotElement(event.target);
+  if (!slotEl) return;
+
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+  hotbarSlotEls.forEach((hotbarSlotEl) => hotbarSlotEl.classList.remove("drag-over"));
+  inventoryMenuGridEl.querySelectorAll(".inventory-slot").forEach((inventorySlotEl) => {
+    inventorySlotEl.classList.remove("drag-over");
+  });
+  slotEl.classList.add("drag-over");
+}
+
+function handleInventoryDragLeave(event) {
+  const slotEl = getInventorySlotElement(event.target);
+  if (!slotEl) return;
+  slotEl.classList.remove("drag-over");
+}
+
+function handleInventoryDrop(event) {
+  if (draggedInventorySlotIndex === null) return;
+  const targetIndex = getInventorySlotIndex(event.target);
+  if (targetIndex === null) return;
+
+  event.preventDefault();
+  game.moveInventorySlot(draggedInventorySlotIndex, targetIndex);
+  clearInventoryDragState();
+}
+
+function handleInventoryDragEnd() {
+  clearInventoryDragState();
+}
+
+hotbarSlotEls.forEach((slotEl, index) => {
+  slotEl.dataset.slotIndex = String(index);
+  slotEl.addEventListener("dragstart", handleInventoryDragStart);
+  slotEl.addEventListener("dragover", handleInventoryDragOver);
+  slotEl.addEventListener("dragleave", handleInventoryDragLeave);
+  slotEl.addEventListener("drop", handleInventoryDrop);
+  slotEl.addEventListener("dragend", handleInventoryDragEnd);
+});
+
+inventoryMenuGridEl.addEventListener("dragstart", handleInventoryDragStart);
+inventoryMenuGridEl.addEventListener("dragover", handleInventoryDragOver);
+inventoryMenuGridEl.addEventListener("dragleave", handleInventoryDragLeave);
+inventoryMenuGridEl.addEventListener("drop", handleInventoryDrop);
+inventoryMenuGridEl.addEventListener("dragend", handleInventoryDragEnd);
+
 const pizzeriaInfo = world.getPizzeriaInfo ? world.getPizzeriaInfo() : null;
 const weaponShopInfo = world.getWeaponShopInfo ? world.getWeaponShopInfo() : null;
 const gasStationInfos = world.getGasStationInfos ? world.getGasStationInfos() : [];
@@ -117,6 +278,9 @@ const CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
+const MAP_CENTER = MAP_SIZE * 0.5;
+const MAP_SCALE = MAP_SIZE / (MAP_EXTENT * 2);
+const ROAD_LINE_REACH = MAP_EXTENT * 1.75;
 
 
 const editorJsonTextEl = document.querySelector("#editor-json-text");
@@ -224,17 +388,60 @@ function setupCameraSettingsPanel() {
   });
 }
 
-function worldToMap(x, z) {
-  const px = ((x + MAP_EXTENT) / (MAP_EXTENT * 2)) * MAP_SIZE;
-  const py = MAP_SIZE - ((z + MAP_EXTENT) / (MAP_EXTENT * 2)) * MAP_SIZE;
-  return { x: px, y: py };
+window.addEventListener("wheel", (event) => {
+  const state = latestGameState;
+  if (!state || !isSniperScopeActive(state)) return;
+
+  if (event.deltaY > 0.01) {
+    sniperScopeZoomIndex = Math.max(0, sniperScopeZoomIndex - 1);
+  } else if (event.deltaY < -0.01) {
+    sniperScopeZoomIndex = Math.min(
+      SNIPER_SCOPE_ZOOM_STEPS.length - 1,
+      sniperScopeZoomIndex + 1
+    );
+  }
+
+  event.preventDefault();
+}, { passive: false });
+
+const minimapRoadLines = [];
+
+function worldToMap(x, z, originX = 0, originZ = 0, heading = 0) {
+  const dx = x - originX;
+  const dz = z - originZ;
+  const cosH = Math.cos(heading);
+  const sinH = Math.sin(heading);
+
+  const localX = dx * cosH + dz * sinH;
+  const localZ = -dx * sinH + dz * cosH;
+
+  return {
+    x: MAP_CENTER + localX * MAP_SCALE,
+    y: MAP_CENTER + localZ * MAP_SCALE,
+    localX,
+    localZ
+  };
 }
 
-function setMarker(el, worldX, worldZ, rotation = 0, visible = true) {
-  el.classList.toggle("hidden", !visible);
-  if (!visible) return;
+function setMarker(
+  el,
+  worldX,
+  worldZ,
+  originX,
+  originZ,
+  heading,
+  rotation = 0,
+  visible = true
+) {
+  const p = worldToMap(worldX, worldZ, originX, originZ, heading);
+  const inBounds =
+    Math.abs(p.localX) <= MAP_EXTENT * 1.05 &&
+    Math.abs(p.localZ) <= MAP_EXTENT * 1.05;
 
-  const p = worldToMap(worldX, worldZ);
+  el.classList.toggle("hidden", !visible || !inBounds);
+  if (!visible) return;
+  if (!inBounds) return;
+
   el.style.left = `${p.x}px`;
   el.style.top = `${p.y}px`;
   el.style.transform = `translate(-50%, -50%) rotate(${rotation}rad)`;
@@ -294,19 +501,41 @@ function initMinimap() {
   const roadCoords = [-2, -1, 0, 1, 2].map((v) => v * CONFIG.blockSize);
 
   for (const coord of roadCoords) {
-    const pV = worldToMap(coord, 0);
-    const pH = worldToMap(0, coord);
+    const vertical = createSvgLine(0, 0, 0, 0, "map-road-line");
+    const horizontal = createSvgLine(0, 0, 0, 0, "map-road-line");
 
-    navMapSvg.appendChild(
-      createSvgLine(pV.x, 0, pV.x, MAP_SIZE, "map-road-line")
-    );
+    minimapRoadLines.push({
+      line: vertical,
+      x1: coord,
+      z1: -ROAD_LINE_REACH,
+      x2: coord,
+      z2: ROAD_LINE_REACH
+    });
+    minimapRoadLines.push({
+      line: horizontal,
+      x1: -ROAD_LINE_REACH,
+      z1: coord,
+      x2: ROAD_LINE_REACH,
+      z2: coord
+    });
 
-    navMapSvg.appendChild(
-      createSvgLine(0, pH.y, MAP_SIZE, pH.y, "map-road-line")
-    );
+    navMapSvg.appendChild(vertical);
+    navMapSvg.appendChild(horizontal);
   }
 
   navMapSvg.appendChild(navRouteEl);
+}
+
+function updateMinimapRoads(originX, originZ, heading) {
+  for (const road of minimapRoadLines) {
+    const start = worldToMap(road.x1, road.z1, originX, originZ, heading);
+    const end = worldToMap(road.x2, road.z2, originX, originZ, heading);
+
+    road.line.setAttribute("x1", start.x);
+    road.line.setAttribute("y1", start.y);
+    road.line.setAttribute("x2", end.x);
+    road.line.setAttribute("y2", end.y);
+  }
 }
 
 function updatePrompt(state) {
@@ -324,6 +553,91 @@ function updatePrompt(state) {
 
   promptEl.textContent = text;
   promptEl.classList.toggle("hidden", !text);
+  promptEl.classList.toggle(
+    "above-hotbar",
+    state.playerMode === "walking"
+  );
+}
+
+function updateCrosshair(state) {
+  const sniperScopeActive = isSniperScopeActive(state);
+  const shouldShow =
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !state.gameOver &&
+    state.playerMode === "walking" &&
+    state.weaponHud.hasEquippedWeapon &&
+    state.inventoryHud.activeItemKind === "weapon" &&
+    !sniperScopeActive;
+
+  crosshairEl.classList.toggle("hidden", !shouldShow);
+  document.body.style.cursor = shouldShow || sniperScopeActive ? "none" : "";
+  if (!shouldShow) return;
+
+  const aimBlend = state.characterState?.aimBlend ?? 0;
+  const crouchBlend = THREE.MathUtils.clamp(
+    state.characterState?.crouchBlend ?? 0,
+    0,
+    1
+  );
+  const speedNorm = Math.min(
+    1,
+    (state.characterState?.planarSpeed ?? 0) / CONFIG.onFoot.runSpeed
+  );
+  const sprintFactor = THREE.MathUtils.clamp((speedNorm - 0.58) / 0.42, 0, 1);
+  const swayAmp =
+    (0.8 + speedNorm * 2.1 + sprintFactor * 1.8) *
+    (1 - aimBlend * 0.78) *
+    THREE.MathUtils.lerp(1, 0.6, crouchBlend);
+  const offsetX = Math.sin(crosshairAnimTime * 5.2) * swayAmp * 0.32;
+  const offsetY = Math.abs(Math.sin(crosshairAnimTime * 10.4)) * swayAmp;
+  const weaponId = state.weaponHud?.equippedId ?? "pistol";
+  const spreadRadius = Math.max(0, state.characterState?.shotSpread ?? 0);
+  const shotBloom = THREE.MathUtils.clamp(
+    state.characterState?.shotBloom ?? 0,
+    0,
+    1.6
+  );
+  const weaponAttributes = getWeaponAttributes(weaponId);
+  const baseVisualSpread =
+    spreadRadius * (weaponAttributes?.crosshairPxScale ?? 520);
+  let spread = baseVisualSpread * 1.18 + 6 + shotBloom * 11;
+
+  if (!cameraController.isFirstPerson()) {
+    const edgePressure = THREE.MathUtils.clamp(
+      state.characterState?.cursorEdgePressure ?? 0,
+      0,
+      1
+    );
+    spread += edgePressure * 6;
+  }
+
+  spread = THREE.MathUtils.lerp(spread, 4.5, aimBlend * crouchBlend * (1 - shotBloom * 0.45));
+  const cursor = cameraController.getCursorScreenPosition();
+  const crosshairOffsetX = cameraController.isFirstPerson()
+    ? offsetX
+    : cursor.x - window.innerWidth * 0.5 + offsetX;
+  const crosshairOffsetY = cameraController.isFirstPerson()
+    ? offsetY
+    : cursor.y - window.innerHeight * 0.5 + offsetY;
+
+  crosshairEl.style.setProperty("--crosshair-x", `${crosshairOffsetX.toFixed(2)}px`);
+  crosshairEl.style.setProperty("--crosshair-y", `${crosshairOffsetY.toFixed(2)}px`);
+  crosshairEl.style.setProperty("--crosshair-scale", `${(1 - aimBlend * 0.08).toFixed(3)}`);
+  crosshairRingEl?.style.setProperty("--crosshair-size", `${spread.toFixed(2)}px`);
+}
+
+function updateSniperScope(state) {
+  const active = isSniperScopeActive(state);
+  sniperScopeEl?.classList.toggle("hidden", !active);
+  sniperScopeEl?.classList.toggle("active", active);
+  if (sniperScopeZoomEl) {
+    sniperScopeZoomEl.textContent = getSniperScopeZoomLabel(state);
+  }
+  settingsToggleEl.classList.toggle("hidden", active);
+  if (active) {
+    cameraSettingsPanelEl.classList.add("hidden");
+  }
 }
 
 function updateFuelUI(state) {
@@ -350,6 +664,95 @@ function updateFuelUI(state) {
   }
 
   fuelBarFillEl.style.width = `${Math.max(0, Math.min(100, state.fuelPct))}%`;
+}
+
+function updateHealthUI(state) {
+  const health = state.healthHud;
+  const healthPct = Math.max(0, Math.min(100, health?.pct ?? 100));
+
+  healthPercentEl.textContent = `${healthPct}%`;
+  healthValueEl.textContent = `${health?.current ?? 100} / ${health?.max ?? 100}`;
+  healthBarFillEl.style.width = `${healthPct}%`;
+
+  healthCardEl.classList.remove("normal", "mid", "critical");
+
+  if (healthPct <= 30) {
+    healthCardEl.classList.add("critical");
+    healthStateEl.textContent = "Critica";
+  } else if (healthPct <= 65) {
+    healthCardEl.classList.add("mid");
+    healthStateEl.textContent = "Herido";
+  } else {
+    healthCardEl.classList.add("normal");
+    healthStateEl.textContent = "Completa";
+  }
+
+  healthCardEl.classList.remove("hidden");
+}
+
+function getPedestrianHealthBarEl(id) {
+  let el = pedestrianHealthBarEls.get(id);
+  if (el) return el;
+
+  el = document.createElement("div");
+  el.className = "ped-health-bar";
+  el.innerHTML = '<div class="ped-health-fill"></div>';
+  pedHealthLayerEl.appendChild(el);
+  pedestrianHealthBarEls.set(id, el);
+  return el;
+}
+
+function updatePedestrianHealthBars(state) {
+  const targets = state.pedestrianHealthHud ?? [];
+  const activeIds = new Set();
+
+  for (const target of targets) {
+    projectedPedPosition.set(target.x, target.y ?? 2.05, target.z).project(camera);
+    const visible =
+      projectedPedPosition.z > -1 &&
+      projectedPedPosition.z < 1 &&
+      projectedPedPosition.x >= -1.1 &&
+      projectedPedPosition.x <= 1.1 &&
+      projectedPedPosition.y >= -1.1 &&
+      projectedPedPosition.y <= 1.1;
+
+    if (!visible) continue;
+
+    activeIds.add(target.id);
+    const el = getPedestrianHealthBarEl(target.id);
+    const fillEl = el.firstElementChild;
+    const screenX = (projectedPedPosition.x * 0.5 + 0.5) * window.innerWidth;
+    const screenY = (-projectedPedPosition.y * 0.5 + 0.5) * window.innerHeight;
+    const pct = Math.max(0, Math.min(100, target.pct ?? 100));
+
+    el.classList.remove("hidden");
+    el.style.left = `${screenX.toFixed(1)}px`;
+    el.style.top = `${(screenY - 18).toFixed(1)}px`;
+    if (fillEl) {
+      fillEl.style.transform = `scaleX(${(pct / 100).toFixed(3)})`;
+    }
+  }
+
+  for (const [id, el] of pedestrianHealthBarEls) {
+    el.classList.toggle("hidden", !activeIds.has(id));
+  }
+}
+
+function updateDamageOverlay(state) {
+  const health = state.healthHud;
+  const pct = Math.max(0, Math.min(100, health?.pct ?? 100));
+  const criticalStart = Math.max(1, Math.min(100, health?.criticalStartPct ?? 70));
+
+  if (pct >= criticalStart) {
+    damageOverlayEl.classList.add("hidden");
+    damageOverlayEl.style.opacity = "0";
+    return;
+  }
+
+  const intensity = 1 - pct / criticalStart;
+  damageOverlayEl.classList.remove("hidden");
+  const boostedIntensity = Math.pow(intensity, 1.75);
+  damageOverlayEl.style.opacity = `${THREE.MathUtils.lerp(0.03, 0.92, boostedIntensity).toFixed(3)}`;
 }
 
 function updateMissionUI(state) {
@@ -381,48 +784,223 @@ function updateWeaponUI(state) {
 
   weaponCardEl.classList.toggle("armed", weapon.hasEquippedWeapon);
   weaponCardEl.classList.toggle("shop", weapon.inShop);
+  updateSniperScope(state);
+}
+
+function legacyUpdateInventoryUIEntries(state) {
+  const walking = state.playerMode === "walking";
+  const inventory = state.inventoryHud;
+  const entries = inventory?.entries ?? [];
+  const summaryText =
+    `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} · Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
+
+  const hotbarSlots = inventory?.hotbarSlots ?? [];
+  hotbarSlotEls.forEach((slotEl, index) => {
+    const slot = hotbarSlots[index];
+    const labelEl = slotEl.querySelector(".hotbar-label");
+    const detailEl = slotEl.querySelector(".hotbar-detail");
+
+    labelEl.textContent = slot?.empty ? "Vacío" : (slot?.label ?? "Vacío");
+    detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+
+    slotEl.classList.toggle("active", (inventory?.selectedSlot ?? 0) === index);
+    slotEl.classList.toggle("empty", !!slot?.empty);
+  });
+
+  inventoryMenuSummaryEl.textContent = summaryText;
+
+  const backpackSlotCount = Math.max(15, entries.length);
+  inventoryMenuGridEl.innerHTML = Array.from({ length: backpackSlotCount }, (_, index) => {
+    const entry = entries[index];
+    const classes = ["inventory-slot", entry ? "" : "empty"].filter(Boolean).join(" ");
+    return `<div class="${classes}"><strong>${entry?.label ?? "Vacío"}</strong><span>${entry?.detail ?? ""}</span></div>`;
+  }).join("");
+
+  inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
+  hotbarEl.classList.toggle("hidden", !walking);
+}
+
+function legacyUpdateInventoryUISlotsBroken(state) {
+  const walking = state.playerMode === "walking";
+  const inventory = state.inventoryHud;
+  const slots = inventory?.slots ?? [];
+  const summaryText =
+    `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} Â· Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
+
+  const hotbarSlots = inventory?.hotbarSlots ?? [];
+  hotbarSlotEls.forEach((slotEl, index) => {
+    const slot = hotbarSlots[index];
+    const labelEl = slotEl.querySelector(".hotbar-label");
+    const detailEl = slotEl.querySelector(".hotbar-detail");
+
+    labelEl.textContent = slot?.empty ? "VacÃ­o" : (slot?.label ?? "VacÃ­o");
+    detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+
+    slotEl.classList.toggle("active", (inventory?.selectedSlot ?? 0) === index);
+    slotEl.classList.toggle("empty", !!slot?.empty);
+  });
+
+  inventoryMenuSummaryEl.textContent = summaryText;
+
+  inventoryMenuGridEl.innerHTML = slots.map((slot) => {
+    const classes = [
+      "inventory-slot",
+      slot?.empty ? "empty" : "",
+      slot?.active ? "active" : ""
+    ].filter(Boolean).join(" ");
+    const keyMarkup = slot?.key ? `<div class="inventory-slot-key">${slot.key}</div>` : "";
+    return `<div class="${classes}">${keyMarkup}<strong>${slot?.empty ? "VacÃ­o" : (slot?.label ?? "VacÃ­o")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
+  }).join("");
+
+  inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
+  hotbarEl.classList.toggle("hidden", !walking);
+}
+
+function updateInventoryUI(state) {
+  const walking = state.playerMode === "walking";
+  const inventory = state.inventoryHud;
+  const slots = inventory?.slots ?? [];
+  const summaryText =
+    `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} - Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
+
+  const hotbarSlots = inventory?.hotbarSlots ?? [];
+  hotbarSlotEls.forEach((slotEl, index) => {
+    const slot = hotbarSlots[index];
+    const labelEl = slotEl.querySelector(".hotbar-label");
+    const detailEl = slotEl.querySelector(".hotbar-detail");
+
+    slotEl.dataset.slotIndex = String(index);
+    slotEl.dataset.empty = slot?.empty ? "true" : "false";
+    slotEl.draggable = !slot?.empty && inventoryMenuOpen;
+    labelEl.textContent = slot?.empty ? "Vacio" : (slot?.label ?? "Vacio");
+    detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+
+    slotEl.classList.toggle("active", (inventory?.selectedSlot ?? 0) === index);
+    slotEl.classList.toggle("empty", !!slot?.empty);
+  });
+
+  inventoryMenuSummaryEl.textContent = summaryText;
+
+  if (draggedInventorySlotIndex === null) {
+    const backpackSlots = slots.slice(5);
+    inventoryMenuGridEl.innerHTML = backpackSlots.map((slot) => {
+      const classes = [
+        "inventory-slot",
+        slot?.empty ? "empty" : "",
+        slot?.active ? "active" : ""
+      ].filter(Boolean).join(" ");
+      const slotNumber = (slot?.index ?? 0) + 1;
+      const keyMarkup = `<div class="inventory-slot-key">${slotNumber}</div>`;
+      return `<div class="${classes}" data-slot-index="${slot?.index ?? -1}" data-empty="${slot?.empty ? "true" : "false"}" draggable="${slot?.empty ? "false" : "true"}">${keyMarkup}<strong>${slot?.empty ? "Vacio" : (slot?.label ?? "Vacio")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
+    }).join("");
+  }
+
+  inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
+  hotbarEl.classList.toggle("hidden", !walking);
+  hotbarEl.classList.toggle("inventory-drag-enabled", inventoryMenuOpen);
 }
 
 function updateMinimap(state) {
-  const playerPoint = worldToMap(state.playerPose.x, state.playerPose.z);
+  const mapFocus =
+    state.playerMode === "driving" ? state.vehiclePose : state.playerPose;
+  const mapHeading = mapFocus.heading;
+  const originX = mapFocus.x;
+  const originZ = mapFocus.z;
+
+  updateMinimapRoads(originX, originZ, mapHeading);
 
   setMarker(
     navPlayerEl,
     state.playerPose.x,
     state.playerPose.z,
-    Math.PI - state.playerPose.heading,
+    originX,
+    originZ,
+    mapHeading,
+    0,
     true
   );
 
   if (pizzeriaInfo) {
-    setMarker(navPizzeriaEl, pizzeriaInfo.center.x, pizzeriaInfo.center.z, 0, true);
+    setMarker(
+      navPizzeriaEl,
+      pizzeriaInfo.center.x,
+      pizzeriaInfo.center.z,
+      originX,
+      originZ,
+      mapHeading,
+      0,
+      true
+    );
   } else {
     navPizzeriaEl.classList.add("hidden");
   }
 
   if (navWeaponShopEl && weaponShopInfo) {
-    setMarker(navWeaponShopEl, weaponShopInfo.center.x, weaponShopInfo.center.z, 0, true);
+    setMarker(
+      navWeaponShopEl,
+      weaponShopInfo.center.x,
+      weaponShopInfo.center.z,
+      originX,
+      originZ,
+      mapHeading,
+      0,
+      true
+    );
   }
 
   for (let i = 0; i < navGasStationEls.length; i++) {
     const el = navGasStationEls[i];
     const info = gasStationInfos[i];
     if (!el || !info) continue;
-    setMarker(el, info.center.x, info.center.z, Math.PI / 4, true);
+    setMarker(
+      el,
+      info.center.x,
+      info.center.z,
+      originX,
+      originZ,
+      mapHeading,
+      Math.PI / 4,
+      true
+    );
   }
 
   const showCar = state.playerMode === "walking";
-  setMarker(navCarEl, state.vehiclePose.x, state.vehiclePose.z, 0, showCar);
+  navCarEl.classList.toggle("player-owned-car", showCar);
+  setMarker(
+    navCarEl,
+    state.vehiclePose.x,
+    state.vehiclePose.z,
+    originX,
+    originZ,
+    mapHeading,
+    Math.PI - (state.vehiclePose.heading - mapHeading),
+    showCar
+  );
 
   const targetPoint = state.missionState.targetPoint;
   const hasTarget = !!targetPoint;
 
   if (hasTarget) {
-    setMarker(navTargetEl, targetPoint.x, targetPoint.z, 0, true);
+    setMarker(
+      navTargetEl,
+      targetPoint.x,
+      targetPoint.z,
+      originX,
+      originZ,
+      mapHeading,
+      0,
+      true
+    );
 
-    const targetMap = worldToMap(targetPoint.x, targetPoint.z);
-    navRouteEl.setAttribute("x1", playerPoint.x);
-    navRouteEl.setAttribute("y1", playerPoint.y);
+    const targetMap = worldToMap(
+      targetPoint.x,
+      targetPoint.z,
+      originX,
+      originZ,
+      mapHeading
+    );
+    navRouteEl.setAttribute("x1", MAP_CENTER);
+    navRouteEl.setAttribute("y1", MAP_CENTER);
     navRouteEl.setAttribute("x2", targetMap.x);
     navRouteEl.setAttribute("y2", targetMap.y);
     navRouteEl.classList.remove("hidden");
@@ -479,9 +1057,14 @@ function updateUI(state) {
   }
 
   updateFuelUI(state);
+  updateHealthUI(state);
+  updatePedestrianHealthBars(state);
+  updateDamageOverlay(state);
   updateMissionUI(state);
   updateWeaponUI(state);
+  updateInventoryUI(state);
   updateMinimap(state);
+  updateCrosshair(state);
   updatePrompt(state);
   gameOverEl.classList.toggle("hidden", !state.gameOver);
 }
@@ -497,22 +1080,30 @@ function restartGame() {
       right: false,
       accelerate: false,
       brake: false,
+      handbrake: false,
       restart: false,
       interact: false,
       toggleNight: false,
       toggleFirstPerson: false,
       jump: false,
       sprint: false,
+      debugDamage: false,
+      crouch: false,
       fire: false,
+      aim: false,
       shopPrev: false,
       shopNext: false,
       selectWeapon1: false,
       selectWeapon2: false,
-      selectWeapon3: false
+      selectWeapon3: false,
+      selectWeapon4: false,
+      selectWeapon5: false,
+      toggleInventory: false
     },
     0,
     null
   );
+  latestGameState = state;
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, 0);
   world.updateChoiceSigns(
@@ -523,7 +1114,10 @@ function restartGame() {
   updatePlayerCarEffects(playerCar, 0, {
     nightMode: world.isNightMode(),
     speed: state.playerMode === "driving" ? state.rawSpeed : 0,
+    steer: 0,
+    surfaceType: state.vehicleSurface ?? "road",
     isBraking: false,
+    isHandbraking: false,
     isAccelerating: false,
     turnSignal: 0
   });
@@ -543,6 +1137,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 1 / 20);
   const currentFps = dt > 0 ? 1 / dt : 0;
   fpsSmoothed += (currentFps - fpsSmoothed) * 0.12;
+  crosshairAnimTime += dt;
 
   if (editor.consumeToggleRequested()) {
     if (editor.isActive()) {
@@ -556,6 +1151,7 @@ function animate() {
     input.restart = false;
     input.toggleNight = false;
     input.toggleFirstPerson = false;
+    input.toggleInventory = false;
     editor.update(dt);
     renderer.render(scene, camera);
     return;
@@ -571,13 +1167,69 @@ function animate() {
     input.toggleFirstPerson = false;
   }
 
+  if (input.toggleInventory && lastPlayerMode === "walking") {
+    inventoryMenuOpen = !inventoryMenuOpen;
+    if (!inventoryMenuOpen) {
+      clearInventoryDragState();
+    }
+  }
+  input.toggleInventory = false;
+
+  cameraController.setPointerLockBlocked(inventoryMenuOpen && cameraController.isFirstPerson());
+  cameraController.setAimDownSights(
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !!input.aim
+  );
+
+  const wantsSniperScope =
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !!input.aim &&
+    latestGameState?.playerMode === "walking" &&
+    latestGameState?.inventoryHud?.activeItemKind === "weapon" &&
+    latestGameState?.weaponHud?.equippedId === "francotirador";
+
+  if (wantsSniperScope && !cameraController.isFirstPerson()) {
+    cameraController.setFirstPerson(true);
+    sniperScopeForcedFirstPerson = true;
+  } else if (!wantsSniperScope && sniperScopeForcedFirstPerson) {
+    cameraController.setFirstPerson(false);
+    sniperScopeForcedFirstPerson = false;
+  }
+
   if (input.restart) {
     restartGame();
     input.restart = false;
   }
 
   const controlContext = cameraController.getWalkingControlContext();
-  const state = game.update(input, dt, controlContext);
+  const frameInput = inventoryMenuOpen
+    ? {
+        ...input,
+        left: false,
+        right: false,
+        accelerate: false,
+        brake: false,
+        handbrake: false,
+        interact: false,
+        jump: false,
+        sprint: false,
+        crouch: false,
+        fire: false,
+        aim: false,
+        shopPrev: false,
+        shopNext: false
+      }
+    : input;
+  const state = game.update(frameInput, dt, controlContext);
+  latestGameState = state;
+  lastPlayerMode = state.playerMode;
+
+  if (state.playerMode !== "walking" && inventoryMenuOpen) {
+    inventoryMenuOpen = false;
+    clearInventoryDragState();
+  }
 
   world.updateInteractivePlaces(state.playerPose, state.playerMode, dt);
   world.updateChoiceSigns(
@@ -592,7 +1244,10 @@ function animate() {
   updatePlayerCarEffects(playerCar, dt, {
     nightMode: world.isNightMode(),
     speed: state.playerMode === "driving" ? state.rawSpeed : 0,
+    steer: state.playerMode === "driving" ? state.steer : 0,
+    surfaceType: state.vehicleSurface ?? "road",
     isBraking: state.playerMode === "driving" ? state.isBraking : false,
+    isHandbraking: state.playerMode === "driving" ? state.isHandbraking : false,
     isAccelerating: state.playerMode === "driving" ? state.isAccelerating : false,
     turnSignal: state.playerMode === "driving" ? state.turnSignal : 0
   });
@@ -600,6 +1255,18 @@ function animate() {
   updatePlayerCharacterVisual(playerCharacter, dt, state.characterState);
 
   cameraController.update(state, dt, playerCar, playerCharacter, false);
+  const walkingAimBlend = state.characterState?.aimBlend ?? 0;
+  const activeWeaponAttributes = getWeaponAttributes(state.weaponHud?.equippedId ?? null);
+  const sniperScopeActive = isSniperScopeActive(state);
+  const targetFov = state.playerMode === "walking"
+    ? sniperScopeActive
+      ? getSniperScopeFov(state)
+      : cameraController.isFirstPerson()
+        ? THREE.MathUtils.lerp(68, 57, walkingAimBlend)
+        : THREE.MathUtils.lerp(68, 40, walkingAimBlend)
+    : 68;
+  camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 12, dt);
+  camera.updateProjectionMatrix();
   updateUI(state);
 
   renderer.render(scene, camera);
@@ -615,5 +1282,3 @@ initMinimap();
 setupCameraSettingsPanel();
 restartGame();
 animate();
-
-

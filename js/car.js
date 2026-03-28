@@ -61,6 +61,16 @@ function createSmokeTexture() {
   return texture;
 }
 
+function createSkidMarkMaterial() {
+  return new THREE.MeshBasicMaterial({
+    color: 0x050505,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+}
+
 function createWheel(radius = 0.44, width = 0.48) {
   const wheel = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, width, 18),
@@ -901,6 +911,20 @@ function createPlayerRig() {
   const smokeRoot = new THREE.Group();
   const smokeTexture = createSmokeTexture();
   const smokeParticles = [];
+  const skidRoot = new THREE.Group();
+  const skidMaterial = createSkidMarkMaterial();
+  const skidMarks = [];
+
+  for (let i = 0; i < CONFIG.carVisuals.skidMarksMax; i++) {
+    const mark = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      skidMaterial.clone()
+    );
+    mark.rotation.x = -Math.PI / 2;
+    mark.visible = false;
+    skidRoot.add(mark);
+    skidMarks.push(mark);
+  }
 
   for (let i = 0; i < CONFIG.carVisuals.smokeMaxParticles; i++) {
     const sprite = new THREE.Sprite(
@@ -930,6 +954,17 @@ function createPlayerRig() {
   playerRig.rearIndicators = [indRearLeft, indRearRight];
   playerRig.smokeRoot = smokeRoot;
   playerRig.smokeParticles = smokeParticles;
+  playerRig.skidRoot = skidRoot;
+  playerRig.skidMarks = skidMarks;
+  playerRig.skidMarkIndex = 0;
+  playerRig.skidPrevLeft = null;
+  playerRig.skidPrevRight = null;
+  playerRig.skidWheelLeftLocal = new THREE.Vector3(-1.14, 0, -1.52);
+  playerRig.skidWheelRightLocal = new THREE.Vector3(1.14, 0, -1.52);
+  playerRig.skidTempLeft = new THREE.Vector3();
+  playerRig.skidTempRight = new THREE.Vector3();
+  playerRig.skidTempMid = new THREE.Vector3();
+  playerRig.skidTempDir = new THREE.Vector3();
   playerRig.hideInFirstPerson = [
     body,
     frontClip,
@@ -962,6 +997,7 @@ export function attachPlayerCarEffects(car, scene) {
   const rig = car.userData.playerRig;
   if (!rig || rig.smokeRoot.parent) return;
   scene.add(rig.smokeRoot);
+  scene.add(rig.skidRoot);
 }
 
 export function setPlayerCarViewMode(car, {
@@ -1021,6 +1057,9 @@ export function resetPlayerCarEffects(car) {
 
   rig.smokeAccumulator = 0;
   rig.blinkTime = 0;
+  rig.skidMarkIndex = 0;
+  rig.skidPrevLeft = null;
+  rig.skidPrevRight = null;
 
   for (const particle of rig.smokeParticles) {
     particle.age = particle.life;
@@ -1040,6 +1079,10 @@ export function resetPlayerCarEffects(car) {
   for (const head of rig.headlights) {
     head.light.intensity = 0;
     setEmissive(head.glow, 0x000000, 0);
+  }
+
+  for (const mark of rig.skidMarks ?? []) {
+    mark.visible = false;
   }
 }
 
@@ -1101,6 +1144,88 @@ function updateSmoke(car, rig, dt, state) {
   }
 }
 
+function emitSkidSegment(rig, from, to, surfaceType = "road") {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const length = Math.hypot(dx, dz);
+
+  if (length < 0.03 || length > 4) return;
+
+  const mark = rig.skidMarks[rig.skidMarkIndex];
+  rig.skidMarkIndex = (rig.skidMarkIndex + 1) % rig.skidMarks.length;
+
+  rig.skidTempMid.set(
+    (from.x + to.x) * 0.5,
+    surfaceType === "grass"
+      ? (CONFIG.carVisuals.grassSkidMarkYOffset ?? -0.155)
+      : (CONFIG.carVisuals.skidMarkYOffset ?? -0.145),
+    (from.z + to.z) * 0.5
+  );
+  rig.skidTempDir.set(dx, 0, dz);
+
+  mark.visible = true;
+  mark.position.copy(rig.skidTempMid);
+  mark.rotation.set(-Math.PI / 2, Math.atan2(dx, dz), 0);
+  mark.scale.set(
+    surfaceType === "grass"
+      ? (CONFIG.carVisuals.grassSkidMarkWidth ?? 0.28)
+      : (CONFIG.carVisuals.skidMarkWidth ?? 0.22),
+    length,
+    1
+  );
+  mark.material.color.setHex(surfaceType === "grass" ? 0x2c2416 : 0x050505);
+  mark.material.opacity = surfaceType === "grass"
+    ? THREE.MathUtils.lerp(0.18, 0.3, Math.min(1, length * 2.2))
+    : THREE.MathUtils.lerp(0.2, 0.38, Math.min(1, length * 2.2));
+}
+
+function updateSkidMarks(car, rig, state) {
+  const speed = Math.abs(state.speed ?? 0);
+  const steerAmount = Math.abs(state.steer ?? 0);
+  const surfaceType = state.surfaceType ?? "road";
+  const onGrass = surfaceType === "grass";
+  const shouldSkid =
+    (
+      (
+        !!state.isHandbraking &&
+        speed >= (CONFIG.carVisuals.skidMarkMinSpeed ?? 0.16) &&
+        steerAmount >= (CONFIG.carVisuals.skidMarkMinSteer ?? 0.22)
+      ) ||
+      (
+        onGrass &&
+        speed >= 0.09
+      )
+    );
+
+  car.localToWorld(rig.skidTempLeft.copy(rig.skidWheelLeftLocal));
+  car.localToWorld(rig.skidTempRight.copy(rig.skidWheelRightLocal));
+
+  if (shouldSkid) {
+    if (rig.skidPrevLeft) {
+      emitSkidSegment(rig, rig.skidPrevLeft, rig.skidTempLeft, surfaceType);
+    }
+    if (rig.skidPrevRight) {
+      emitSkidSegment(rig, rig.skidPrevRight, rig.skidTempRight, surfaceType);
+    }
+
+    if (!rig.skidPrevLeft) {
+      rig.skidPrevLeft = rig.skidTempLeft.clone();
+    } else {
+      rig.skidPrevLeft.copy(rig.skidTempLeft);
+    }
+
+    if (!rig.skidPrevRight) {
+      rig.skidPrevRight = rig.skidTempRight.clone();
+    } else {
+      rig.skidPrevRight.copy(rig.skidTempRight);
+    }
+    return;
+  }
+
+  rig.skidPrevLeft = null;
+  rig.skidPrevRight = null;
+}
+
 function updateLights(car, rig, dt, state) {
   const nightMode = !!state.nightMode;
   const braking = !!state.isBraking && (state.speed ?? 0) > 0.02;
@@ -1159,6 +1284,10 @@ export function updatePlayerCarEffects(car, dt, state) {
 
   if (rig.smokeRoot.parent) {
     updateSmoke(car, rig, dt, state);
+  }
+
+  if (rig.skidRoot?.parent) {
+    updateSkidMarks(car, rig, state);
   }
 }
 

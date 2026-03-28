@@ -50,13 +50,28 @@ export function createCameraController(camera, lookTarget, options = {}) {
     options.firstPersonToggleCooldown ?? CONFIG.camera.firstPersonToggleCooldown ?? 0.12;
 
   let pointerLocked = false;
+  let pointerLockBlocked = false;
   let mouseYaw = 0;
   let mousePitch = 0;
+  let aimDownSights = false;
+  let aimBlend = 0;
+  let shotCameraKick = 0;
+  let shotCameraLift = 0;
+  let prevWeaponPulse = 0;
 
+  const mouseScreen = new THREE.Vector2(
+    window.innerWidth * 0.5,
+    window.innerHeight * 0.5
+  );
+  const mouseNdc = new THREE.Vector2(0, 0);
+  const raycaster = new THREE.Raycaster();
   const tempDirection = new THREE.Vector3();
   const tempForward = new THREE.Vector3();
   const tempPose = new THREE.Vector3();
   const tempLook = new THREE.Vector3();
+  const tempAimDirection = new THREE.Vector3();
+  const thirdPersonHorizontalEdgePenaltyStart = 0.3;
+  const thirdPersonVerticalEdgePenaltyStart = 0.6;
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -80,6 +95,36 @@ export function createCameraController(camera, lookTarget, options = {}) {
     return a;
   }
 
+  function getThirdPersonCursorEdgePressure() {
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+    const normX = Math.abs((mouseScreen.x / width) * 2 - 1);
+    const normY = Math.abs((mouseScreen.y / height) * 2 - 1);
+    const xPressure = clamp(
+      (normX - thirdPersonHorizontalEdgePenaltyStart) / (1 - thirdPersonHorizontalEdgePenaltyStart),
+      0,
+      1
+    );
+    const yPressure = clamp(
+      (normY - thirdPersonVerticalEdgePenaltyStart) / (1 - thirdPersonVerticalEdgePenaltyStart),
+      0,
+      1
+    );
+    return Math.max(xPressure ** 1.85, yPressure ** 1.7);
+  }
+
+  function getThirdPersonMoveHeading() {
+    camera.getWorldDirection(tempDirection);
+    tempDirection.y = 0;
+
+    if (tempDirection.lengthSq() < 0.0001) {
+      return lastState?.playerPose?.heading ?? 0;
+    }
+
+    tempDirection.normalize();
+    return Math.atan2(tempDirection.x, -tempDirection.z);
+  }
+
   function setPointerLocked(value) {
     pointerLocked = value;
   }
@@ -92,12 +137,34 @@ export function createCameraController(camera, lookTarget, options = {}) {
     return !!target?.closest?.("input, select, button, textarea, label");
   }
 
+  function updateMouseViewportPosition(clientX, clientY) {
+    const width = Math.max(1, window.innerWidth);
+    const height = Math.max(1, window.innerHeight);
+
+    mouseScreen.set(
+      clamp(clientX, 0, width),
+      clamp(clientY, 0, height)
+    );
+
+    mouseNdc.set(
+      clamp((mouseScreen.x / width) * 2 - 1, -1, 1),
+      clamp(-(mouseScreen.y / height) * 2 + 1, -1, 1)
+    );
+  }
+
   function onMouseMove(event) {
+    if (typeof event.clientX === "number" && typeof event.clientY === "number") {
+      updateMouseViewportPosition(event.clientX, event.clientY);
+    }
+
     if (!firstPerson) return;
+    if (pointerLockBlocked) return;
     if (usePointerLock && !pointerLocked) return;
 
-    const yawDelta = event.movementX * firstPersonSensitivity;
-    const pitchDelta = -event.movementY * firstPersonSensitivity;
+    const aimingWalking = aimDownSights && firstPersonMode === "walking";
+    const sensitivityMultiplier = aimingWalking ? 0.52 : 1;
+    const yawDelta = event.movementX * firstPersonSensitivity * sensitivityMultiplier;
+    const pitchDelta = -event.movementY * firstPersonSensitivity * sensitivityMultiplier;
 
     if (
       Math.abs(yawDelta) < firstPersonMouseDeadzone &&
@@ -126,6 +193,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
   function onMouseDown(event) {
     if (isInteractiveElement(event.target)) return;
     if (!firstPerson || !usePointerLock) return;
+    if (pointerLockBlocked) return;
     if (document.pointerLockElement !== domElement) {
       domElement.requestPointerLock?.();
     }
@@ -218,23 +286,55 @@ export function createCameraController(camera, lookTarget, options = {}) {
     return firstPerson;
   }
 
+  function setPointerLockBlocked(blocked) {
+    pointerLockBlocked = !!blocked;
+
+    if (pointerLockBlocked) {
+      setPointerLocked(false);
+      if (document.pointerLockElement === domElement) {
+        document.exitPointerLock?.();
+      }
+    }
+  }
+
+  function setAimDownSights(enabled) {
+    aimDownSights = !!enabled;
+  }
+
   function buildThirdPersonRig(state) {
     const heading = state.playerPose.heading;
 
     if (state.playerMode === "walking") {
+      const crouchBlend = state.characterState?.crouchBlend ?? 0;
+      const crouchCameraDrop = crouchBlend * 0.62;
+      const crouchLookDrop = crouchBlend * 0.4;
+      const forwardX = Math.sin(heading);
+      const forwardZ = -Math.cos(heading);
       const backX = -Math.sin(heading) * CONFIG.camera.walkFollowDistance;
       const backZ = Math.cos(heading) * CONFIG.camera.walkFollowDistance;
 
       const sideX = Math.cos(heading) * CONFIG.camera.walkSideOffset;
       const sideZ = Math.sin(heading) * CONFIG.camera.walkSideOffset;
+      const recoilBackX = -forwardX * shotCameraKick * 0.52;
+      const recoilBackZ = -forwardZ * shotCameraKick * 0.52;
 
       return {
-        cameraX: state.playerPose.x + backX + sideX,
-        cameraY: CONFIG.camera.walkHeight + (state.characterState?.jumpOffset ?? 0) * 0.18,
-        cameraZ: state.playerPose.z + backZ + sideZ,
+        cameraX: state.playerPose.x + backX + sideX + recoilBackX,
+        cameraY:
+          CONFIG.camera.walkHeight -
+          crouchCameraDrop +
+          (state.characterState?.jumpOffset ?? 0) * 0.18 +
+          shotCameraLift * 0.22 +
+          shotCameraKick * 0.08,
+        cameraZ: state.playerPose.z + backZ + sideZ + recoilBackZ,
 
         lookX: state.playerPose.x + Math.sin(heading) * CONFIG.camera.walkLookAhead,
-        lookY: CONFIG.camera.walkLookHeight + (state.characterState?.jumpOffset ?? 0) * 0.35,
+        lookY:
+          CONFIG.camera.walkLookHeight -
+          crouchLookDrop +
+          (state.characterState?.jumpOffset ?? 0) * 0.35 +
+          shotCameraKick * 1.28 +
+          shotCameraLift * 0.4,
         lookZ: state.playerPose.z - Math.cos(heading) * CONFIG.camera.walkLookAhead,
 
         firstPerson: false
@@ -337,6 +437,16 @@ export function createCameraController(camera, lookTarget, options = {}) {
     );
     tempLook.copy(tempPose).addScaledVector(tempDirection, distance);
 
+    if (state.playerMode === "walking") {
+      tempPose.addScaledVector(tempDirection, aimBlend * 0.045);
+      tempPose.y -= aimBlend * 0.012;
+      tempLook.copy(tempPose).addScaledVector(tempDirection, distance);
+    }
+
+    tempPose.addScaledVector(tempDirection, -shotCameraKick * 0.045);
+    tempPose.y += shotCameraLift * 0.08;
+    tempLook.y += shotCameraKick * 0.65 + shotCameraLift * 0.42;
+
     return {
       cameraX: tempPose.x,
       cameraY: tempPose.y,
@@ -352,17 +462,24 @@ export function createCameraController(camera, lookTarget, options = {}) {
 
   function applyRig(rig, dt, instant = false) {
     if (rig.firstPerson) {
+      const snapWalkingFirstPerson = false;
+      const subtleWalkingFirstPerson =
+        firstPersonMode === "walking";
       const firstPersonPositionDamping =
         firstPersonMode === "driving"
           ? (CONFIG.camera.firstPersonPositionDampingDriving ?? CONFIG.camera.firstPersonPositionDamping ?? 14)
-          : (CONFIG.camera.firstPersonPositionDampingWalking ?? CONFIG.camera.firstPersonPositionDamping ?? 14);
+          : (subtleWalkingFirstPerson
+              ? 40
+              : (CONFIG.camera.firstPersonPositionDampingWalking ?? CONFIG.camera.firstPersonPositionDamping ?? 14));
 
       const firstPersonLookDamping =
         firstPersonMode === "driving"
           ? (CONFIG.camera.firstPersonLookDampingDriving ?? CONFIG.camera.firstPersonLookDamping ?? 10)
-          : (CONFIG.camera.firstPersonLookDampingWalking ?? CONFIG.camera.firstPersonLookDamping ?? 10);
+          : (subtleWalkingFirstPerson
+              ? 36
+              : (CONFIG.camera.firstPersonLookDampingWalking ?? CONFIG.camera.firstPersonLookDamping ?? 10));
 
-      if (instant) {
+      if (instant || snapWalkingFirstPerson) {
         camera.position.set(rig.cameraX, rig.cameraY, rig.cameraZ);
         lookTarget.set(rig.lookX, rig.lookY, rig.lookZ);
         camera.lookAt(lookTarget);
@@ -484,6 +601,48 @@ export function createCameraController(camera, lookTarget, options = {}) {
       idleLookTime = 0;
     }
 
+    const targetAimBlend =
+      firstPerson &&
+      state.playerMode === "walking" &&
+      aimDownSights &&
+      !!state.weaponHud?.hasEquippedWeapon &&
+      state.inventoryHud?.activeItemKind === "weapon"
+        ? 1
+        : 0;
+    aimBlend = instant
+      ? targetAimBlend
+      : THREE.MathUtils.damp(aimBlend, targetAimBlend, 14, dt);
+
+    const weaponState = state.characterState?.weapon;
+    const muzzlePulse = weaponState?.muzzlePulse ?? 0;
+    const pulseRise = Math.max(0, muzzlePulse - prevWeaponPulse);
+
+    if (state.playerMode === "walking" && pulseRise > 0.001) {
+      shotCameraKick = clamp(
+        shotCameraKick + pulseRise * ((weaponState?.cameraKick ?? 0.08) * 1.55),
+        0,
+        0.42
+      );
+      shotCameraLift = clamp(
+        shotCameraLift + pulseRise * ((weaponState?.cameraLift ?? 0.03) * 1.8),
+        0,
+        0.26
+      );
+
+      if (firstPerson && weaponState?.recoilClimb) {
+        const pitchLimits = getModePitchLimits(state.playerMode);
+        mousePitch = clamp(
+          mousePitch + pulseRise * (weaponState?.recoilClimb ?? 0.02),
+          pitchLimits.min,
+          pitchLimits.max
+        );
+      }
+    }
+
+    prevWeaponPulse = muzzlePulse;
+    shotCameraKick = THREE.MathUtils.damp(shotCameraKick, 0, 10, dt);
+    shotCameraLift = THREE.MathUtils.damp(shotCameraLift, 0, 7.5, dt);
+
     const enableCarFP = firstPerson && state.playerMode === "driving";
     const enableCharacterFP = firstPerson && state.playerMode === "walking";
 
@@ -502,26 +661,122 @@ export function createCameraController(camera, lookTarget, options = {}) {
   }
 
   function getWalkingControlContext() {
-    if (!firstPerson) {
+    const walkingMode = (lastState?.playerMode ?? "walking") === "walking";
+    const hasEquippedWeapon =
+      !!lastState?.weaponHud?.hasEquippedWeapon &&
+      lastState?.inventoryHud?.activeItemKind === "weapon";
+
+    if (!walkingMode) {
       return {
         firstPerson: false,
         moveHeading: null,
+        aimHeading: null,
+        aimPitch: null,
+        aiming: false,
+        aimBlend: 0,
+        aimDirection: null,
+        aimRayOrigin: null,
+        cursorEdgePressure: 0,
+        faceAim: false,
+        faceHeading: null,
         thirdPersonTurnSensitivity
       };
     }
 
-    if ((lastState?.playerMode ?? "walking") !== "walking") {
+    if (!firstPerson && !hasEquippedWeapon) {
+      const moveHeading = getThirdPersonMoveHeading();
       return {
         firstPerson: false,
-        moveHeading: null,
+        moveHeading,
+        aimHeading: null,
+        aimPitch: null,
+        aiming: false,
+        aimBlend: 0,
+        aimDirection: null,
+        aimRayOrigin: null,
+        cursorEdgePressure: 0,
+        faceAim: false,
+        faceHeading: null,
         thirdPersonTurnSensitivity
       };
     }
+
+    if (!firstPerson) {
+      const moveHeading = getThirdPersonMoveHeading();
+      raycaster.setFromCamera(mouseNdc, camera);
+      tempAimDirection.copy(raycaster.ray.direction);
+
+      const flatLength = Math.hypot(tempAimDirection.x, tempAimDirection.z);
+      if (flatLength < 0.0001) {
+        tempAimDirection.set(0, 0, -1);
+      } else {
+        tempAimDirection.normalize();
+      }
+
+      const aimHeading = Math.atan2(tempAimDirection.x, -tempAimDirection.z);
+      const aimPitch = Math.atan2(
+        tempAimDirection.y,
+        Math.max(0.0001, flatLength)
+      );
+
+      return {
+        firstPerson: false,
+        moveHeading,
+        aimHeading,
+        aimPitch,
+        aiming: aimDownSights,
+        aimBlend: aimDownSights ? 1 : 0,
+        aimDirection: {
+          x: tempAimDirection.x,
+          y: tempAimDirection.y,
+          z: tempAimDirection.z
+        },
+        aimRayOrigin: {
+          x: raycaster.ray.origin.x,
+          y: raycaster.ray.origin.y,
+          z: raycaster.ray.origin.z
+        },
+        cursorEdgePressure: getThirdPersonCursorEdgePressure(),
+        faceAim: false,
+        faceHeading: null,
+        thirdPersonTurnSensitivity
+      };
+    }
+
+    tempAimDirection.set(
+      Math.sin(mouseYaw) * Math.cos(mousePitch),
+      Math.sin(mousePitch),
+      -Math.cos(mouseYaw) * Math.cos(mousePitch)
+    ).normalize();
 
     return {
       firstPerson: true,
       moveHeading: normalizeAngle(mouseYaw),
+      aimHeading: normalizeAngle(mouseYaw),
+      aimPitch: mousePitch,
+      aiming: aimDownSights,
+      aimBlend,
+      aimDirection: {
+        x: tempAimDirection.x,
+        y: tempAimDirection.y,
+        z: tempAimDirection.z
+      },
+      aimRayOrigin: {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z
+      },
+      cursorEdgePressure: 0,
+      faceAim: false,
+      faceHeading: null,
       thirdPersonTurnSensitivity
+    };
+  }
+
+  function getCursorScreenPosition() {
+    return {
+      x: mouseScreen.x,
+      y: mouseScreen.y
     };
   }
 
@@ -557,9 +812,12 @@ export function createCameraController(camera, lookTarget, options = {}) {
     togglePerspective,
     setFirstPerson,
     isFirstPerson,
+    setAimDownSights,
+    setPointerLockBlocked,
     setSettings,
     getSettings,
     getWalkingControlContext,
+    getCursorScreenPosition,
     resetFirstPersonLook,
     update,
     dispose
