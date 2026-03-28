@@ -45,14 +45,87 @@ export function createWorld(scene) {
 
   const boxColliders = [];
   const circleColliders = [];
+  const colliderCellSize = 36;
+  const boxColliderGrid = new Map();
+  const circleColliderGrid = new Map();
   let activeEditorOwner = null;
+  let collisionQueryMark = 0;
+
+  function getCellCoord(value) {
+    return Math.floor(value / colliderCellSize);
+  }
+
+  function getCellKey(cellX, cellZ) {
+    return `${cellX},${cellZ}`;
+  }
+
+  function addColliderToGrid(grid, collider, minX, maxX, minZ, maxZ) {
+    collider._gridKeys = [];
+
+    const minCellX = getCellCoord(minX);
+    const maxCellX = getCellCoord(maxX);
+    const minCellZ = getCellCoord(minZ);
+    const maxCellZ = getCellCoord(maxZ);
+
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+      for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+        const key = getCellKey(cellX, cellZ);
+        let bucket = grid.get(key);
+        if (!bucket) {
+          bucket = [];
+          grid.set(key, bucket);
+        }
+        bucket.push(collider);
+        collider._gridKeys.push(key);
+      }
+    }
+  }
+
+  function indexBoxCollider(collider) {
+    addColliderToGrid(
+      boxColliderGrid,
+      collider,
+      collider.x - collider.width * 0.5,
+      collider.x + collider.width * 0.5,
+      collider.z - collider.depth * 0.5,
+      collider.z + collider.depth * 0.5
+    );
+  }
+
+  function indexCircleCollider(collider) {
+    addColliderToGrid(
+      circleColliderGrid,
+      collider,
+      collider.x - collider.radius,
+      collider.x + collider.radius,
+      collider.z - collider.radius,
+      collider.z + collider.radius
+    );
+  }
+
+  function rebuildColliderGrids() {
+    boxColliderGrid.clear();
+    circleColliderGrid.clear();
+
+    for (const collider of boxColliders) {
+      indexBoxCollider(collider);
+    }
+
+    for (const collider of circleColliders) {
+      indexCircleCollider(collider);
+    }
+  }
 
   function registerBoxCollider(x, z, width, depth, meta = {}) {
-    boxColliders.push({ x, z, width, depth, meta, owner: activeEditorOwner });
+    const collider = { x, z, width, depth, meta, owner: activeEditorOwner };
+    boxColliders.push(collider);
+    indexBoxCollider(collider);
   }
 
   function registerCircleCollider(x, z, radius, meta = {}) {
-    circleColliders.push({ x, z, radius, meta, owner: activeEditorOwner });
+    const collider = { x, z, radius, meta, owner: activeEditorOwner };
+    circleColliders.push(collider);
+    indexCircleCollider(collider);
   }
 
   function beginEditorObject(owner) {
@@ -125,6 +198,27 @@ export function createWorld(scene) {
     return graph.evaluateSegment(segment, distanceAlongSegment, laneOffset);
   }
 
+  function distanceToNearestGridLine(value) {
+    const block = CONFIG.blockSize;
+    const wrapped = ((value % block) + block) % block;
+    return Math.min(wrapped, block - wrapped);
+  }
+
+  function getSurfaceType(x, z) {
+    const distX = distanceToNearestGridLine(x);
+    const distZ = distanceToNearestGridLine(z);
+    const roadHalf = CONFIG.roadWidth * 0.5;
+    const intersectionHalf = CONFIG.intersectionSize * 0.5;
+
+    const onVerticalRoad = distX <= roadHalf;
+    const onHorizontalRoad = distZ <= roadHalf;
+    const onIntersection = distX <= intersectionHalf && distZ <= intersectionHalf;
+
+    return onVerticalRoad || onHorizontalRoad || onIntersection
+      ? "road"
+      : "grass";
+  }
+
   function solveCircleCollision(pos, collider, radius) {
     const dx = pos.x - collider.x;
     const dz = pos.z - collider.z;
@@ -189,20 +283,50 @@ export function createWorld(scene) {
     return pos;
   }
 
+  function gatherNearbyColliders(grid, out, minX, maxX, minZ, maxZ, mark) {
+    const minCellX = getCellCoord(minX);
+    const maxCellX = getCellCoord(maxX);
+    const minCellZ = getCellCoord(minZ);
+    const maxCellZ = getCellCoord(maxZ);
+
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+      for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+        const bucket = grid.get(getCellKey(cellX, cellZ));
+        if (!bucket) continue;
+
+        for (const collider of bucket) {
+          if (collider._queryMark === mark) continue;
+          collider._queryMark = mark;
+          out.push(collider);
+        }
+      }
+    }
+  }
+
   function resolveCharacterMotion(currentPose, radius, desiredX, desiredZ, extraBlockers = []) {
     const pos = {
       x: desiredX,
       z: desiredZ
     };
+    const nearbyBoxes = [];
+    const nearbyCircles = [];
+    const minX = Math.min(currentPose?.x ?? desiredX, desiredX) - radius - 2;
+    const maxX = Math.max(currentPose?.x ?? desiredX, desiredX) + radius + 2;
+    const minZ = Math.min(currentPose?.z ?? desiredZ, desiredZ) - radius - 2;
+    const maxZ = Math.max(currentPose?.z ?? desiredZ, desiredZ) + radius + 2;
+    const mark = ++collisionQueryMark;
 
     const maxCoord = CONFIG.world.grassSize * 0.5 - 8;
 
+    gatherNearbyColliders(boxColliderGrid, nearbyBoxes, minX, maxX, minZ, maxZ, mark);
+    gatherNearbyColliders(circleColliderGrid, nearbyCircles, minX, maxX, minZ, maxZ, mark);
+
     for (let i = 0; i < 3; i++) {
-      for (const box of boxColliders) {
+      for (const box of nearbyBoxes) {
         solveBoxCollision(pos, box, radius);
       }
 
-      for (const circle of circleColliders) {
+      for (const circle of nearbyCircles) {
         solveCircleCollision(pos, circle, radius);
       }
 
@@ -247,6 +371,8 @@ export function createWorld(scene) {
       }
     }
 
+    rebuildColliderGrids();
+
     return true;
   }
 
@@ -259,6 +385,7 @@ export function createWorld(scene) {
     findClosestRoadPose: graph.findClosestRoadPose,
 
     evaluateSegment,
+    getSurfaceType,
     buildRoadSegment: graph.buildRoadSegment,
     buildTransitionAfterRoad: graph.buildTransitionAfterRoad,
     buildRoadAfterConnector: graph.buildRoadAfterConnector,

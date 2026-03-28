@@ -4,6 +4,7 @@ export function createInput() {
     right: false,
     accelerate: false,
     brake: false,
+    handbrake: false,
     restart: false,
     interact: false,
     toggleNight: false,
@@ -11,13 +12,18 @@ export function createInput() {
     togglePhone: false,
     jump: false,
     sprint: false,
+    debugDamage: false,
 
     fire: false,
+    aim: false,
     shopPrev: false,
     shopNext: false,
     selectWeapon1: false,
     selectWeapon2: false,
-    selectWeapon3: false
+    selectWeapon3: false,
+    selectWeapon4: false,
+    selectWeapon5: false,
+    toggleInventory: false
   };
 
   const keyMap = {
@@ -33,15 +39,17 @@ export function createInput() {
     KeyR: "restart",
     KeyE: "interact",
     Enter: "interact",
-    Space: "jump",
     ShiftLeft: "sprint",
     ShiftRight: "sprint",
+    KeyC: "crouch",
 
     KeyQ: "shopPrev",
     KeyF: "shopNext",
     Digit1: "selectWeapon1",
     Digit2: "selectWeapon2",
     Digit3: "selectWeapon3",
+    Digit4: "selectWeapon4",
+    Digit5: "selectWeapon5",
     KeyX: "fire"
   };
 
@@ -63,6 +71,12 @@ export function createInput() {
   }
 
   function setKey(code, value) {
+    if (code === "Space") {
+      input.handbrake = value;
+      input.jump = value;
+      return;
+    }
+
     const action = keyMap[code];
     if (!action) return;
     input[action] = value;
@@ -71,6 +85,13 @@ export function createInput() {
   window.addEventListener("keydown", (event) => {
     if (isTypingTarget(event.target)) return;
 
+    if (event.key === "¡" || event.code === "Backquote") {
+      if (!event.repeat) {
+        pulse("debugDamage");
+      }
+      return;
+    }
+
     if (event.code === "KeyN") {
       if (!event.repeat) {
         input.toggleNight = true;
@@ -78,7 +99,7 @@ export function createInput() {
       return;
     }
 
-    if (event.code === "KeyV" || event.code === "KeyC") {
+    if (event.code === "KeyV") {
       if (!event.repeat) {
         input.toggleFirstPerson = true;
       }
@@ -88,6 +109,9 @@ export function createInput() {
     if (event.code === "KeyP") {
       if (!event.repeat) {
         input.togglePhone = true;
+    if (event.code === "KeyI") {
+      if (!event.repeat) {
+        input.toggleInventory = true;
       }
       return;
     }
@@ -96,7 +120,11 @@ export function createInput() {
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyC" || event.code === "KeyP") return;
+
+    if (event.code === "KeyN" || event.code === "KeyV" || event.code === "KeyI" || event.code === "KeyP") return;
+
+
+
     setKey(event.code, false);
   });
 
@@ -104,13 +132,22 @@ export function createInput() {
     if (isTypingTarget(event.target)) return;
     if (event.button === 0) {
       input.fire = true;
+    } else if (event.button === 2) {
+      input.aim = true;
     }
   });
 
   window.addEventListener("mouseup", (event) => {
     if (event.button === 0) {
       input.fire = false;
+    } else if (event.button === 2) {
+      input.aim = false;
     }
+  });
+
+  window.addEventListener("contextmenu", (event) => {
+    if (isTypingTarget(event.target)) return;
+    event.preventDefault();
   });
 
   window.addEventListener("wheel", (event) => {
@@ -125,7 +162,10 @@ export function createInput() {
 
   window.addEventListener("blur", () => {
     for (const key of Object.keys(input)) {
-      if (key === "toggleNight" || key === "toggleFirstPerson" || key === "togglePhone") continue;
+
+      if (key === "toggleNight" || key === "toggleFirstPerson" || key === "togglePhone" || key === "toggleInventory") continue;
+
+     
       input[key] = false;
     }
   });
@@ -133,6 +173,7 @@ export function createInput() {
   document.addEventListener("pointerlockchange", () => {
     if (!document.pointerLockElement) {
       input.fire = false;
+      input.aim = false;
     }
   });
 

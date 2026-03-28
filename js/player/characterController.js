@@ -16,6 +16,7 @@ export function createCharacterController(world) {
     jumpOffset: 0,
     onGround: true,
     coyoteTime: 0,
+    crouchBlend: 0,
 
     moveX: 0,
     moveZ: 0,
@@ -31,6 +32,7 @@ export function createCharacterController(world) {
     state.jumpOffset = 0;
     state.onGround = true;
     state.coyoteTime = 0;
+    state.crouchBlend = 0;
     state.moveX = 0;
     state.moveZ = 0;
     state.prevJump = false;
@@ -45,6 +47,8 @@ export function createCharacterController(world) {
       jumpOffset: state.jumpOffset,
       onGround: state.onGround,
       coyoteTime: state.coyoteTime,
+      crouchBlend: state.crouchBlend,
+      crouching: state.crouchBlend > 0.55,
       moveX: state.moveX,
       moveZ: state.moveZ
     };
@@ -52,17 +56,27 @@ export function createCharacterController(world) {
 
   function update(input, dt, extraColliders = [], control = null) {
     const useFirstPersonMovement = !!control?.firstPerson;
+    const aiming = !!control?.aiming;
+    const faceAim = !!control?.faceAim;
+    const crouchHeld = !!input.crouch;
     const thirdPersonTurnSensitivity =
       typeof control?.thirdPersonTurnSensitivity === "number"
         ? control.thirdPersonTurnSensitivity
         : 1;
-    const moveHeading =
+    const aimingTurnMultiplier = !useFirstPersonMovement && aiming ? 0.55 : 1;
+    const inputForward = (input.accelerate ? 1 : 0) + (input.brake ? -1 : 0);
+    const inputRight = (input.right ? 1 : 0) + (input.left ? -1 : 0);
+    const requestedMoveHeading =
       typeof control?.moveHeading === "number"
         ? control.moveHeading
         : state.heading;
-
-    const inputForward = (input.accelerate ? 1 : 0) + (input.brake ? -1 : 0);
-    const inputRight = (input.right ? 1 : 0) + (input.left ? -1 : 0);
+    const straightForwardBackOnly =
+      !useFirstPersonMovement &&
+      Math.abs(inputRight) < 0.1 &&
+      Math.abs(inputForward) > 0.1;
+    const moveHeading = straightForwardBackOnly
+      ? state.heading
+      : requestedMoveHeading;
 
     const forwardX = Math.sin(moveHeading);
     const forwardZ = -Math.cos(moveHeading);
@@ -83,8 +97,17 @@ export function createCharacterController(world) {
       moveZ = 0;
     }
 
+    state.crouchBlend = clamp(
+      state.crouchBlend + (crouchHeld ? 1 : -1) * dt * 8,
+      0,
+      1
+    );
+    const crouchMoveFactor = 1 - state.crouchBlend * 0.45;
+    const canSprint = !crouchHeld;
     const targetSpeed = isMoving
-      ? (input.sprint ? CONFIG.onFoot.runSpeed : CONFIG.onFoot.walkSpeed)
+      ? ((input.sprint && canSprint) ? CONFIG.onFoot.runSpeed : CONFIG.onFoot.walkSpeed) *
+        (aiming ? 0.42 : 1) *
+        crouchMoveFactor
       : 0;
 
     const response = state.onGround
@@ -115,22 +138,38 @@ export function createCharacterController(world) {
     state.moveX = moveX;
     state.moveZ = moveZ;
 
-    const shouldUpdateHeading = useFirstPersonMovement || isMoving;
+    const shouldUpdateHeading = useFirstPersonMovement || isMoving || faceAim;
     if (shouldUpdateHeading) {
+      const backwardOnly =
+        !useFirstPersonMovement &&
+        !faceAim &&
+        inputForward < -0.1 &&
+        Math.abs(inputRight) < 0.1;
+      const forwardOnly =
+        !useFirstPersonMovement &&
+        !faceAim &&
+        inputForward > 0.1 &&
+        Math.abs(inputRight) < 0.1;
       const targetHeading = useFirstPersonMovement
         ? moveHeading
-        : Math.atan2(moveX, -moveZ);
+        : faceAim && typeof control?.faceHeading === "number"
+          ? control.faceHeading
+          : (backwardOnly || forwardOnly)
+            ? state.heading
+            : Math.atan2(moveX, -moveZ);
       const delta = normalizeAngle(targetHeading - state.heading);
       const turnSpeed = useFirstPersonMovement
         ? CONFIG.onFoot.turnSpeed * 2
-        : CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity;
+        : faceAim
+          ? CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity * aimingTurnMultiplier * 1.2
+          : CONFIG.onFoot.turnSpeed * thirdPersonTurnSensitivity * aimingTurnMultiplier;
 
       state.heading = normalizeAngle(
         state.heading + delta * Math.min(1, turnSpeed * dt)
       );
     }
 
-    const jumpPressed = !!input.jump;
+    const jumpPressed = !!input.jump && !crouchHeld;
     const jumpJustPressed = jumpPressed && !state.prevJump;
     state.coyoteTime = state.onGround
       ? 0.08

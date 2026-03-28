@@ -22,31 +22,49 @@
     <div class="panel info">
       <h1>Road Driver 3D</h1>
       <p><strong>Coche:</strong> W / flecha arriba acelera, S / flecha abajo frena, A/D o flechas giran.</p>
-      <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar.</p>
-      <p><strong>Interaccion:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
-      <p><strong>Camara:</strong> V alterna entre 3a y 1a persona.</p>
+      <p><strong>A pie:</strong> W/A/S/D moverse, Shift correr, Espacio saltar, C para agacharse.</p>
+      <p><strong>Interacción:</strong> E entrar/salir del coche, recoger pizza, entregar y comprar.</p>
+      <p><strong>Cámara:</strong> V alterna entre 3ª y 1ª persona.</p>
       <p><strong>Armas:</strong> Click izquierdo dispara, Q/F cambia arma o producto, 1/2/3 equipa.</p>
-      <p><strong>Movil:</strong> P saca/guarda el telefono.</p>
+      <p><strong>Inventario:</strong> 1/2/3/4/5 cambia slot, I abre la mochila.</p>
+      <p><strong>Móvil:</strong> P saca/guarda el teléfono.</p>
+      <p><strong>Test vida:</strong> ¡ baja vida temporalmente para probar daño, regeneración y efecto rojo.</p>
       <p><strong>Creador:</strong> M abre el editor, click coloca, click derecho borra y R rota.</p>
     </div>
 
     <div class="panel hud">
       <div>Velocidad: <span id="speed">0</span> km/h</div>
-      <div>Puntuacion: <span id="score">0</span></div>
+      <div>Puntuación: <span id="score">0</span></div>
       <div>Dinero: <span id="money">$0</span></div>
-      <div>Vista: <span id="camera-mode">3a persona</span></div>
+      <div>Vista: <span id="camera-mode">3ª persona</span></div>
       <div>FPS: <span id="fps">0</span></div>
       <div>Estado: <span id="status">Jugando</span></div>
     </div>
   </div>
 
   <div id="mission-card" class="panel mission-card">
-    <div class="mission-kicker">MISION</div>
-    <div id="mission-title" class="mission-title">Pizzeria Vesuvio</div>
-    <div id="mission-objective" class="mission-objective">Entra en la pizzeria y recoge un pedido en la barra</div>
+    <div class="mission-kicker">MISIÓN</div>
+    <div id="mission-title" class="mission-title">Pizzería Vesuvio</div>
+    <div id="mission-objective" class="mission-objective">Entra en la pizzería y recoge un pedido en la barra</div>
     <div class="mission-footer">
       <span id="mission-meta">Sin pedido</span>
       <span id="mission-count">0 entregas</span>
+    </div>
+  </div>
+
+  <div id="health-card" class="panel health-card normal">
+    <div class="health-header">
+      <span class="health-title">VIDA</span>
+      <span id="health-percent" class="health-percent">100%</span>
+    </div>
+
+    <div class="health-bar-shell">
+      <div id="health-bar-fill" class="health-bar-fill"></div>
+    </div>
+
+    <div class="health-meta">
+      <span id="health-value">100 / 100</span>
+      <span id="health-state">Completa</span>
     </div>
   </div>
 
@@ -62,7 +80,7 @@
 
     <div class="fuel-meta">
       <span id="fuel-liters">100.0 L</span>
-      <span id="fuel-state">Optimo</span>
+      <span id="fuel-state">Óptimo</span>
     </div>
   </div>
 
@@ -70,13 +88,36 @@
     <div class="weapon-kicker">ARMAMENTO</div>
     <div id="weapon-name" class="weapon-name">Sin arma</div>
     <div id="weapon-ammo" class="weapon-ammo">Sin equipar</div>
-    <div id="weapon-state" class="weapon-state">Compra en Armeria Atlas</div>
+    <div id="weapon-state" class="weapon-state">Compra en Armería Atlas</div>
+  </div>
+
+  <div id="hotbar" class="hotbar">
+    <div class="hotbar-slot"><span class="hotbar-key">1</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">2</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">3</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">4</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+    <div class="hotbar-slot"><span class="hotbar-key">5</span><span class="hotbar-label">Vacío</span><span class="hotbar-detail"></span></div>
+  </div>
+
+  <div id="inventory-menu" class="inventory-menu hidden">
+    <div class="inventory-menu-shell">
+      <div class="inventory-menu-top">
+        <div>
+          <div class="inventory-menu-kicker">MOCHILA</div>
+          <h2>Inventario</h2>
+        </div>
+        <div class="inventory-menu-close">Pulsa I para cerrar</div>
+      </div>
+      <div id="inventory-menu-summary" class="inventory-menu-summary">Pizzas 0/3 · Gasolina 0 L</div>
+      <div class="inventory-menu-section-title">Mochila</div>
+      <div id="inventory-menu-grid" class="inventory-menu-grid"></div>
+    </div>
   </div>
 
   <div id="nav-map-card" class="panel nav-map-card">
     <div class="nav-map-header">
       <span id="nav-map-title">Mapa de ciudad</span>
-      <span id="nav-map-state">Pizzeria Vesuvio</span>
+      <span id="nav-map-state">Pizzería Vesuvio</span>
     </div>
 
     <div class="nav-map-view">
@@ -92,6 +133,21 @@
   </div>
 
   <div id="prompt" class="prompt hidden"></div>
+  <div id="ped-health-layer" class="ped-health-layer" aria-hidden="true"></div>
+  <div id="damage-overlay" class="damage-overlay hidden" aria-hidden="true"></div>
+  <div id="crosshair" class="crosshair hidden" aria-hidden="true">
+    <span class="crosshair-ring"></span>
+    <span class="crosshair-dot"></span>
+  </div>
+  <div id="sniper-scope" class="sniper-scope hidden" aria-hidden="true">
+    <div class="sniper-scope-vignette"></div>
+    <div class="sniper-scope-circle">
+      <span class="sniper-scope-line v"></span>
+      <span class="sniper-scope-line h"></span>
+      <span class="sniper-scope-center"></span>
+      <span id="sniper-scope-zoom" class="sniper-scope-zoom">x3.0</span>
+    </div>
+  </div>
 
   <aside id="phone-shell" class="phone-shell hidden" aria-hidden="true">
     <div class="phone-device">
@@ -155,15 +211,14 @@
 
               <button class="phone-app" type="button" data-app="camara">
                 <span class="phone-app-icon app-camera"></span>
-                <strong>Camara</strong>
+                <strong>Cámara</strong>
               </button>
             </div>
 
             <div id="phone-status" class="phone-dock-status">
-              Selecciona una app. Despues conectamos su funcionalidad real.
+              Selecciona una app. Después conectamos su funcionalidad real.
             </div>
           </div>
-
         </div>
 
         <div class="phone-homebar" aria-hidden="true">
@@ -190,7 +245,7 @@
           <div>
             <div class="dealer-window-kicker">Concesionario premium</div>
             <h2 id="dealer-browser-title">Road Motors</h2>
-            <p id="dealer-browser-intro-text">Catalogo completo de coches disponibles en el juego.</p>
+            <p id="dealer-browser-intro-text">Catálogo completo de coches disponibles en el juego.</p>
           </div>
 
           <div class="dealer-window-summary">
@@ -212,21 +267,27 @@
   <button id="settings-toggle" class="settings-toggle" type="button">Ajustes</button>
 
   <section id="camera-settings" class="panel camera-settings hidden">
-    <div class="camera-settings-kicker">AJUSTES DE CAMARA</div>
+    <div class="camera-settings-kicker">AJUSTES</div>
 
     <label class="camera-setting">
-      <span>Sensibilidad 1a persona</span>
+      <span>Volumen de armas</span>
+      <input id="weapon-volume" type="range" min="0" max="100" step="1" />
+      <strong id="weapon-volume-value">50%</strong>
+    </label>
+
+    <label class="camera-setting">
+      <span>Sensibilidad 1ª persona</span>
       <input id="fp-sens" type="range" min="0.0004" max="0.01" step="0.0001" />
       <strong id="fp-sens-value">0.0022</strong>
     </label>
 
     <label class="camera-setting">
-      <span>Giro 3a persona (WASD)</span>
+      <span>Giro 3ª persona (WASD)</span>
       <input id="tp-sens" type="range" min="0.25" max="2.5" step="0.05" />
       <strong id="tp-sens-value">1.00x</strong>
     </label>
 
-    <p class="camera-settings-help">Este ajuste controla la rapidez con la que gira el personaje en tercera persona.</p>
+    <p class="camera-settings-help">Aquí puedes ajustar el volumen de las armas y la sensibilidad de la cámara. Al 100% el disparo suena fuerte.</p>
   </section>
 
   <aside id="editor-panel" class="editor-panel hidden">
@@ -240,7 +301,7 @@
       </div>
 
       <p class="editor-summary">
-        Disena tu ciudad con una rejilla visual. Todo lo que coloques se puede guardar en JSON y volver a cargar.
+        Diseña tu ciudad con una rejilla visual. Todo lo que coloques se puede guardar en JSON y volver a cargar.
       </p>
 
       <div class="editor-section">
@@ -254,11 +315,11 @@
           <strong id="editor-selected-label">Ninguno</strong>
         </div>
         <div class="editor-status-row">
-          <span>Posicion</span>
+          <span>Posición</span>
           <strong id="editor-cursor-label">0, 0</strong>
         </div>
         <div class="editor-status-row">
-          <span>Rotacion</span>
+          <span>Rotación</span>
           <strong id="editor-rotation-label">0 deg</strong>
         </div>
         <div class="editor-status-row">
@@ -293,26 +354,26 @@
           id="editor-json-text"
           class="editor-json-text"
           spellcheck="false"
-          placeholder="Aqui aparecera el JSON exportado o puedes pegar aqui un layout para importarlo."
+          placeholder="Aquí aparecerá el JSON exportado o puedes pegar aquí un layout para importarlo."
         ></textarea>
 
         <div class="editor-actions">
           <button id="editor-export-json" type="button">Exportar JSON</button>
-          <button id="editor-export-module" type="button">Exportar modulo</button>
+          <button id="editor-export-module" type="button">Exportar módulo</button>
           <button id="editor-import-json" type="button">Importar texto</button>
           <button id="editor-load-project" type="button">Cargar proyecto</button>
         </div>
 
         <p id="editor-json-status" class="editor-note">
-          Exporta a texto para copiarlo. "Exportar modulo" te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
+          Exporta a texto para copiarlo. "Exportar módulo" te genera el formato listo para pegar en <strong>js/editor/projectLayout.js</strong>.
         </p>
       </div>
 
       <div class="editor-section">
-        <div class="editor-section-title">Ayuda rapida</div>
+        <div class="editor-section-title">Ayuda rápida</div>
         <div class="editor-help">
           <div><strong>M</strong> abrir/cerrar creador</div>
-          <div><strong>WASD / flechas</strong> mover camara</div>
+          <div><strong>WASD / flechas</strong> mover cámara</div>
           <div><strong>R</strong> rotar pieza</div>
           <div><strong>Click izquierdo</strong> colocar</div>
           <div><strong>Click derecho</strong> borrar</div>

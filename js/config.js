@@ -5,14 +5,33 @@ export const CONFIG = {
   intersectionSize: 44,
 
   player: {
-    maxSpeed: 0.5,
-    acceleration: 0.008,
-    braking: 0.018,
-    drag: 0.005,
+    maxSpeed: 0.58,
+    reverseMaxSpeed: 0.22,
+    acceleration: 0.0105,
+    braking: 0.03,
+    handbrakeBraking: 0.018,
+    drag: 0.016,
+    coastDrag: 0.0042,
+    handbrakeDrag: 0.014,
+    handbrakeDriftMinSpeed: 0.18,
+    handbrakeDriftGrip: 0.26,
 
-    laneChangeSpeed: 0.18,
-    laneChangeResponse: 8,
-    laneRecenterInTurn: 8,
+    steerResponse: 7.5,
+    steerReturn: 5.8,
+    steerRate: 0.1,
+    steerAtLowSpeed: 1.2,
+    steerAtHighSpeed: 0.42,
+    handbrakeSteerBoost: 1.72,
+    steerVisualYaw: 0.12,
+    bodyRoll: 0.075,
+    driftSlipBoost: 2.15,
+    driftSlipResponse: 5.4,
+    driftVisualYaw: 0.12,
+    driftVisualRoll: 0.085,
+    driftVisualPitch: 0.05,
+    driftVisualLift: 0.26,
+    driftVisualSpeedThreshold: 80 / 150,
+    collisionDamping: 0.22,
 
     choiceWindow: 48,
 
@@ -42,6 +61,21 @@ export const CONFIG = {
     hitboxRadius: 0.62
   },
 
+  health: {
+    playerMax: 100,
+    playerTrafficMinDamage: 12,
+    playerTrafficMaxDamage: 90,
+    playerTrafficSpeedRef: 0.24,
+    vehiclePedestrianMinDamage: 26,
+    vehiclePedestrianMaxDamage: 100,
+    vehiclePedestrianSpeedRef: 0.24,
+    playerRegenDelay: 3,
+    playerRegenPerSecond: 16,
+    playerCriticalStart: 0.7,
+    pedestrianMax: 100,
+    pedestrianBarDistance: 58
+  },
+
   camera: {
     height: 6.2,
     followDistance: 14,
@@ -55,10 +89,10 @@ export const CONFIG = {
     serviceSideOffset: 2.2,
     serviceSideOffsetRefuel: 3.2,
 
-    walkHeight: 3.7,
-    walkFollowDistance: 6.2,
+    walkHeight: 3.15,
+    walkFollowDistance: 5.15,
     walkLookAhead: 4.9,
-    walkLookHeight: 1.3,
+    walkLookHeight: 1.68,
     walkSideOffset: 0.48,
 
     firstPersonPositionDamping: 14,
@@ -132,6 +166,9 @@ export const CONFIG = {
   fuel: {
     max: 100,
     start: 100,
+    portableCanLiters: 20,
+    portableCanPrice: 16,
+    portableCanMax: 3,
 
     consumptionPerUnit: 0.028,
     idlePerSecond: 0.012,
@@ -150,7 +187,8 @@ export const CONFIG = {
   pizzaDelivery: {
     pickupRadius: 2.3,
     deliveryRadius: 2.85,
-    reward: 10
+    reward: 10,
+    inventoryCapacity: 3
   },
 
   minimap: {
@@ -173,6 +211,14 @@ export const CONFIG = {
     smokeMaxParticles: 28,
     smokeIdleRate: 4,
     smokeMoveRate: 7,
-    smokeAccelRate: 11
+    smokeAccelRate: 11,
+
+    skidMarksMax: 120,
+    skidMarkMinSpeed: 0.16,
+    skidMarkMinSteer: 0.22,
+    skidMarkWidth: 0.22,
+    skidMarkYOffset: 0.031,
+    grassSkidMarkWidth: 0.28,
+    grassSkidMarkYOffset: -0.155
   }
 };
