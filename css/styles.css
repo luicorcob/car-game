@@ -40,14 +40,18 @@ body {
 }
 
 .crosshair {
+  --crosshair-x: 0px;
+  --crosshair-y: 0px;
+  --crosshair-scale: 1;
   position: fixed;
   left: 50%;
   top: 50%;
   width: 26px;
   height: 26px;
-  transform: translate(-50%, -50%);
+  transform: translate(calc(-50% + var(--crosshair-x)), calc(-50% + var(--crosshair-y))) scale(var(--crosshair-scale));
   z-index: 9;
   pointer-events: none;
+  transition: transform 80ms linear;
 }
 
 .crosshair-ring,
@@ -59,12 +63,13 @@ body {
 }
 
 .crosshair-ring {
-  width: 20px;
-  height: 20px;
+  width: var(--crosshair-size, 20px);
+  height: var(--crosshair-size, 20px);
   border: 2px solid rgba(255, 255, 255, 0.92);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.45),
     0 0 12px rgba(106, 184, 255, 0.22);
+  transition: width 90ms ease, height 90ms ease;
 }
 
 .crosshair-dot {

@@ -506,6 +506,7 @@ export function createPlayerCharacter() {
 
     animTime: 0,
     yaw: Math.PI,
+    aimBlend: 0,
     forceHiddenForFirstPerson: false,
 
     tempPosition: new THREE.Vector3(),
@@ -576,6 +577,7 @@ export function resetPlayerCharacterVisual(character) {
 
   rig.animTime = 0;
   rig.yaw = Math.PI;
+  rig.aimBlend = 0;
   rig.forceHiddenForFirstPerson = false;
   character.visible = false;
   character.position.set(0, 0, 0);
@@ -642,6 +644,7 @@ export function updatePlayerCharacterVisual(character, dt, state) {
 
   const carryingPizza = !!state.carryingPizza;
   const aimPitch = typeof state.aimPitch === "number" ? state.aimPitch : 0;
+  const aiming = !!state.aiming;
   const weaponState = state.weapon ?? {
     equippedId: null,
     hasEquippedWeapon: false,
@@ -698,8 +701,11 @@ export function updatePlayerCharacterVisual(character, dt, state) {
   rig.root.position.y = bob;
 
   const hasWeapon = weaponState.hasEquippedWeapon && !carryingPizza;
+  const targetAimBlend = inFirstPerson && aiming && hasWeapon ? 1 : 0;
+  rig.aimBlend = THREE.MathUtils.damp(rig.aimBlend, targetAimBlend, 16, dt);
   const muzzlePulse = weaponState.muzzlePulse ?? 0;
   const recoil = muzzlePulse * 0.26;
+  const sprintFactor = THREE.MathUtils.clamp((speedNorm - 0.58) / 0.42, 0, 1);
 
   if (carryingPizza) {
     rig.legLeftPivot.rotation.x = legSwing * 0.72;
@@ -759,17 +765,24 @@ export function updatePlayerCharacterVisual(character, dt, state) {
           bob,
           recoil
         );
+        const swayStrength =
+          (0.006 + speedNorm * 0.01 + sprintFactor * 0.012) *
+          (1 - rig.aimBlend * 0.78);
+        const swayX = Math.sin(rig.animTime * 0.92) * swayStrength * 0.55;
+        const swayY = Math.abs(Math.sin(rig.animTime * 1.84)) * swayStrength * (1.2 + sprintFactor * 0.5);
+        const swayRotZ = Math.sin(rig.animTime * 0.92) * swayStrength * 0.9;
+        const swayRotX = Math.abs(Math.sin(rig.animTime * 1.84)) * swayStrength * 0.42;
 
         rig.firstPersonWeaponRoot.position.set(
-          fpPose.rootX,
-          fpPose.rootY,
-          fpPose.rootZ
+          THREE.MathUtils.lerp(fpPose.rootX + swayX, -0.32, rig.aimBlend),
+          THREE.MathUtils.lerp(fpPose.rootY + swayY, -0.255, rig.aimBlend),
+          THREE.MathUtils.lerp(fpPose.rootZ, 0.44, rig.aimBlend)
         );
 
         rig.firstPersonWeaponRoot.rotation.set(
-          fpPose.rotX,
-          fpPose.rotY,
-          fpPose.rotZ
+          fpPose.rotX - swayRotX - rig.aimBlend * 0.045,
+          THREE.MathUtils.lerp(fpPose.rotY, 0.012, rig.aimBlend),
+          THREE.MathUtils.lerp(fpPose.rotZ + swayRotZ, -0.004, rig.aimBlend)
         );
       }
     }

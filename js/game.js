@@ -1347,7 +1347,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     );
   }
 
-  function getShotOriginAndDirection(characterState, aimControl = null) {
+  function getShotOriginAndDirection(shot, characterState, aimControl = null) {
     const hasAimDirection =
       typeof aimControl?.aimDirection?.x === "number" &&
       typeof aimControl?.aimDirection?.y === "number" &&
@@ -1355,16 +1355,48 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const aimHeading = typeof aimControl?.aimHeading === "number"
       ? aimControl.aimHeading
       : characterState.heading;
+    const aimBlend = typeof aimControl?.aimBlend === "number"
+      ? aimControl.aimBlend
+      : 0;
+    const planarSpeed = characterState.planarSpeed ?? 0;
+    const moveFactor = Math.min(1.35, planarSpeed / CONFIG.onFoot.runSpeed);
+    const aimingMultiplier = THREE.MathUtils.lerp(1, 0.24, aimBlend);
+    const spreadByWeapon = {
+      pistol: 0.026,
+      shotgun: 0.08,
+      rifle: 0.03
+    };
+    const baseSpread =
+      (spreadByWeapon[shot?.weaponId] ?? 0.028) *
+      (1 + moveFactor * 0.95) *
+      aimingMultiplier;
+    const spreadX = (Math.random() * 2 - 1) * baseSpread;
+    const spreadY = (Math.random() * 2 - 1) * baseSpread;
     const muzzlePose = getPlayerCharacterWeaponMuzzlePose(playerCharacter);
+
+    function withSpread(direction) {
+      const forward = direction.clone().normalize();
+      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+      if (right.lengthSq() < 0.0001) {
+        right.set(1, 0, 0);
+      } else {
+        right.normalize();
+      }
+      const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+      return forward
+        .addScaledVector(right, spreadX)
+        .addScaledVector(up, spreadY)
+        .normalize();
+    }
 
     if (muzzlePose) {
       const tracerForward3D = hasAimDirection
-        ? new THREE.Vector3(
+        ? withSpread(new THREE.Vector3(
             aimControl.aimDirection.x,
             aimControl.aimDirection.y,
             aimControl.aimDirection.z
-          ).normalize()
-        : muzzlePose.forward.clone().normalize();
+          ))
+        : withSpread(muzzlePose.forward.clone());
       const flatForward = new THREE.Vector3(
         tracerForward3D.x,
         0,
@@ -1396,12 +1428,12 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const forwardX = Math.sin(aimHeading);
     const forwardZ = -Math.cos(aimHeading);
     const tracerForward3D = hasAimDirection
-      ? new THREE.Vector3(
+      ? withSpread(new THREE.Vector3(
           aimControl.aimDirection.x,
           aimControl.aimDirection.y,
           aimControl.aimDirection.z
-        ).normalize()
-      : new THREE.Vector3(forwardX, 0, forwardZ).normalize();
+        ))
+      : withSpread(new THREE.Vector3(forwardX, 0, forwardZ));
 
     return {
       origin2D: {
@@ -1422,7 +1454,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   }
 
   function fireWeapon(shot, characterState, aimControl = null) {
-    const shotPose = getShotOriginAndDirection(characterState, aimControl);
+    const shotPose = getShotOriginAndDirection(shot, characterState, aimControl);
     const {
       origin2D,
       start3D,
@@ -1796,6 +1828,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         heading: characterState.heading,
         aimPitch: typeof controlContext?.aimPitch === "number"
           ? controlContext.aimPitch
+          : 0,
+        aiming: !!controlContext?.aiming,
+        aimBlend: typeof controlContext?.aimBlend === "number"
+          ? controlContext.aimBlend
           : 0,
         planarSpeed: characterState.planarSpeed,
         jumpOffset: characterState.jumpOffset,

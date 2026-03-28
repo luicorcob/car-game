@@ -53,6 +53,8 @@ export function createCameraController(camera, lookTarget, options = {}) {
   let pointerLockBlocked = false;
   let mouseYaw = 0;
   let mousePitch = 0;
+  let aimDownSights = false;
+  let aimBlend = 0;
 
   const tempDirection = new THREE.Vector3();
   const tempForward = new THREE.Vector3();
@@ -99,8 +101,10 @@ export function createCameraController(camera, lookTarget, options = {}) {
     if (pointerLockBlocked) return;
     if (usePointerLock && !pointerLocked) return;
 
-    const yawDelta = event.movementX * firstPersonSensitivity;
-    const pitchDelta = -event.movementY * firstPersonSensitivity;
+    const aimingWalking = aimDownSights && firstPersonMode === "walking";
+    const sensitivityMultiplier = aimingWalking ? 0.52 : 1;
+    const yawDelta = event.movementX * firstPersonSensitivity * sensitivityMultiplier;
+    const pitchDelta = -event.movementY * firstPersonSensitivity * sensitivityMultiplier;
 
     if (
       Math.abs(yawDelta) < firstPersonMouseDeadzone &&
@@ -233,6 +237,10 @@ export function createCameraController(camera, lookTarget, options = {}) {
     }
   }
 
+  function setAimDownSights(enabled) {
+    aimDownSights = !!enabled;
+  }
+
   function buildThirdPersonRig(state) {
     const heading = state.playerPose.heading;
 
@@ -351,6 +359,12 @@ export function createCameraController(camera, lookTarget, options = {}) {
       pose.position.z
     );
     tempLook.copy(tempPose).addScaledVector(tempDirection, distance);
+
+    if (state.playerMode === "walking") {
+      tempPose.addScaledVector(tempDirection, aimBlend * 0.045);
+      tempPose.y -= aimBlend * 0.012;
+      tempLook.copy(tempPose).addScaledVector(tempDirection, distance);
+    }
 
     return {
       cameraX: tempPose.x,
@@ -506,6 +520,18 @@ export function createCameraController(camera, lookTarget, options = {}) {
       idleLookTime = 0;
     }
 
+    const targetAimBlend =
+      firstPerson &&
+      state.playerMode === "walking" &&
+      aimDownSights &&
+      !!state.weaponHud?.hasEquippedWeapon &&
+      state.inventoryHud?.activeItemKind === "weapon"
+        ? 1
+        : 0;
+    aimBlend = instant
+      ? targetAimBlend
+      : THREE.MathUtils.damp(aimBlend, targetAimBlend, 14, dt);
+
     const enableCarFP = firstPerson && state.playerMode === "driving";
     const enableCharacterFP = firstPerson && state.playerMode === "walking";
 
@@ -530,6 +556,8 @@ export function createCameraController(camera, lookTarget, options = {}) {
         moveHeading: null,
         aimHeading: null,
         aimPitch: null,
+        aiming: false,
+        aimBlend: 0,
         aimDirection: null,
         thirdPersonTurnSensitivity
       };
@@ -541,6 +569,8 @@ export function createCameraController(camera, lookTarget, options = {}) {
         moveHeading: null,
         aimHeading: null,
         aimPitch: null,
+        aiming: false,
+        aimBlend: 0,
         aimDirection: null,
         thirdPersonTurnSensitivity
       };
@@ -557,6 +587,8 @@ export function createCameraController(camera, lookTarget, options = {}) {
       moveHeading: normalizeAngle(mouseYaw),
       aimHeading: normalizeAngle(mouseYaw),
       aimPitch: mousePitch,
+      aiming: aimDownSights,
+      aimBlend,
       aimDirection: {
         x: tempAimDirection.x,
         y: tempAimDirection.y,
@@ -598,6 +630,7 @@ export function createCameraController(camera, lookTarget, options = {}) {
     togglePerspective,
     setFirstPerson,
     isFirstPerson,
+    setAimDownSights,
     setPointerLockBlocked,
     setSettings,
     getSettings,

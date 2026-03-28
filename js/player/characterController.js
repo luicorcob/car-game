@@ -52,6 +52,7 @@ export function createCharacterController(world) {
 
   function update(input, dt, extraColliders = [], control = null) {
     const useFirstPersonMovement = !!control?.firstPerson;
+    const aiming = !!control?.aiming;
     const thirdPersonTurnSensitivity =
       typeof control?.thirdPersonTurnSensitivity === "number"
         ? control.thirdPersonTurnSensitivity
@@ -84,7 +85,8 @@ export function createCharacterController(world) {
     }
 
     const targetSpeed = isMoving
-      ? (input.sprint ? CONFIG.onFoot.runSpeed : CONFIG.onFoot.walkSpeed)
+      ? (input.sprint ? CONFIG.onFoot.runSpeed : CONFIG.onFoot.walkSpeed) *
+        (aiming ? 0.42 : 1)
       : 0;
 
     const response = state.onGround

@@ -13,6 +13,7 @@ export function createInput() {
     sprint: false,
 
     fire: false,
+    aim: false,
     shopPrev: false,
     shopNext: false,
     selectWeapon1: false,
@@ -114,13 +115,22 @@ export function createInput() {
     if (isTypingTarget(event.target)) return;
     if (event.button === 0) {
       input.fire = true;
+    } else if (event.button === 2) {
+      input.aim = true;
     }
   });
 
   window.addEventListener("mouseup", (event) => {
     if (event.button === 0) {
       input.fire = false;
+    } else if (event.button === 2) {
+      input.aim = false;
     }
+  });
+
+  window.addEventListener("contextmenu", (event) => {
+    if (isTypingTarget(event.target)) return;
+    event.preventDefault();
   });
 
   window.addEventListener("wheel", (event) => {
@@ -143,6 +153,7 @@ export function createInput() {
   document.addEventListener("pointerlockchange", () => {
     if (!document.pointerLockElement) {
       input.fire = false;
+      input.aim = false;
     }
   });
 

@@ -61,6 +61,7 @@ const inventoryMenuEl = document.querySelector("#inventory-menu");
 const inventoryMenuSummaryEl = document.querySelector("#inventory-menu-summary");
 const inventoryMenuGridEl = document.querySelector("#inventory-menu-grid");
 const crosshairEl = document.querySelector("#crosshair");
+const crosshairRingEl = document.querySelector(".crosshair-ring");
 
 const promptEl = document.querySelector("#prompt");
 const cameraSettingsPanelEl = document.querySelector("#camera-settings");
@@ -103,6 +104,7 @@ let fpsSmoothed = 0;
 let inventoryMenuOpen = false;
 let lastPlayerMode = "driving";
 let draggedInventorySlotIndex = null;
+let crosshairAnimTime = 0;
 
 const input = createInput();
 const world = createWorld(scene);
@@ -497,6 +499,23 @@ function updateCrosshair(state) {
     state.inventoryHud.activeItemKind === "weapon";
 
   crosshairEl.classList.toggle("hidden", !shouldShow);
+  if (!shouldShow) return;
+
+  const aimBlend = state.characterState?.aimBlend ?? 0;
+  const speedNorm = Math.min(
+    1,
+    (state.characterState?.planarSpeed ?? 0) / CONFIG.onFoot.runSpeed
+  );
+  const sprintFactor = THREE.MathUtils.clamp((speedNorm - 0.58) / 0.42, 0, 1);
+  const swayAmp = (0.8 + speedNorm * 2.1 + sprintFactor * 1.8) * (1 - aimBlend * 0.78);
+  const offsetX = Math.sin(crosshairAnimTime * 5.2) * swayAmp * 0.32;
+  const offsetY = Math.abs(Math.sin(crosshairAnimTime * 10.4)) * swayAmp;
+  const spread = THREE.MathUtils.lerp(18, 11, aimBlend) + speedNorm * 12 + sprintFactor * 5;
+
+  crosshairEl.style.setProperty("--crosshair-x", `${offsetX.toFixed(2)}px`);
+  crosshairEl.style.setProperty("--crosshair-y", `${offsetY.toFixed(2)}px`);
+  crosshairEl.style.setProperty("--crosshair-scale", `${(1 - aimBlend * 0.08).toFixed(3)}`);
+  crosshairRingEl?.style.setProperty("--crosshair-size", `${spread.toFixed(2)}px`);
 }
 
 function updateFuelUI(state) {
@@ -854,6 +873,7 @@ function restartGame() {
       jump: false,
       sprint: false,
       fire: false,
+      aim: false,
       shopPrev: false,
       shopNext: false,
       selectWeapon1: false,
@@ -899,6 +919,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 1 / 20);
   const currentFps = dt > 0 ? 1 / dt : 0;
   fpsSmoothed += (currentFps - fpsSmoothed) * 0.12;
+  crosshairAnimTime += dt;
 
   if (editor.consumeToggleRequested()) {
     if (editor.isActive()) {
@@ -937,6 +958,11 @@ function animate() {
   input.toggleInventory = false;
 
   cameraController.setPointerLockBlocked(inventoryMenuOpen && cameraController.isFirstPerson());
+  cameraController.setAimDownSights(
+    !inventoryMenuOpen &&
+    !editor.isActive() &&
+    !!input.aim
+  );
 
   if (input.restart) {
     restartGame();
@@ -956,6 +982,7 @@ function animate() {
         jump: false,
         sprint: false,
         fire: false,
+        aim: false,
         shopPrev: false,
         shopNext: false
       }
@@ -992,6 +1019,12 @@ function animate() {
   updatePlayerCharacterVisual(playerCharacter, dt, state.characterState);
 
   cameraController.update(state, dt, playerCar, playerCharacter, false);
+  const targetFov =
+    cameraController.isFirstPerson() && state.playerMode === "walking"
+      ? THREE.MathUtils.lerp(68, 57, state.characterState?.aimBlend ?? 0)
+      : 68;
+  camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 12, dt);
+  camera.updateProjectionMatrix();
   updateUI(state);
 
   renderer.render(scene, camera);
