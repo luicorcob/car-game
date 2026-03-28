@@ -15,6 +15,7 @@ export function createInput() {
     jump: false,
     sprint: false,
     debugDamage: false,
+    debugMoney: false,
     horn: false,
 
     fire: false,
@@ -106,6 +107,13 @@ export function createInput() {
     if (event.key === "¡") {
       if (!event.repeat) {
         pulse("debugDamage");
+      }
+      return;
+    }
+
+    if (event.key === "Âº" || event.key === "º" || event.code === "Backquote") {
+      if (!event.repeat) {
+        pulse("debugMoney");
       }
       return;
     }

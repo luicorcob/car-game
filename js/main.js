@@ -26,6 +26,7 @@ const canvas = document.querySelector("#game");
 const speedEl = document.querySelector("#speed");
 const scoreEl = document.querySelector("#score");
 const moneyEl = document.querySelector("#money");
+const moneyGainPopupEl = document.querySelector("#money-gain-popup");
 const statusEl = document.querySelector("#status");
 const cameraModeEl = document.querySelector("#camera-mode");
 const gameOverEl = document.querySelector("#game-over");
@@ -136,6 +137,7 @@ let lastPlayerMode = "driving";
 let draggedInventorySlotIndex = null;
 let crosshairAnimTime = 0;
 let latestGameState = null;
+let previousMoneyValue = null;
 const SNIPER_SCOPE_ZOOM_STEPS = [1, 0.78, 0.58, 0.42];
 let sniperScopeZoomIndex = 0;
 let sniperScopeForcedFirstPerson = false;
@@ -1122,6 +1124,14 @@ function updateUI(state) {
   speedEl.textContent = state.speedKmh;
   scoreEl.textContent = state.score;
   moneyEl.textContent = `$${state.money}`;
+  if (previousMoneyValue === null) {
+    previousMoneyValue = state.money;
+  } else if (state.money > previousMoneyValue) {
+    showMoneyGainPopup(state.money - previousMoneyValue);
+    previousMoneyValue = state.money;
+  } else if (state.money !== previousMoneyValue) {
+    previousMoneyValue = state.money;
+  }
   fpsEl.textContent = Math.round(fpsSmoothed);
   cameraModeEl.textContent = cameraController.isFirstPerson()
     ? "1ª persona"
@@ -1172,6 +1182,17 @@ function updateUI(state) {
   updateCrosshair(state);
   updatePrompt(state);
   gameOverEl.classList.toggle("hidden", !state.gameOver);
+}
+
+function showMoneyGainPopup(amount) {
+  if (!moneyGainPopupEl || amount <= 0) {
+    return;
+  }
+
+  moneyGainPopupEl.textContent = `+${amount} €`;
+  moneyGainPopupEl.classList.remove("show");
+  void moneyGainPopupEl.offsetWidth;
+  moneyGainPopupEl.classList.add("show");
 }
 
 function formatPhoneMoney(amount) {
@@ -1468,6 +1489,7 @@ function restartGame() {
       jump: false,
       sprint: false,
       debugDamage: false,
+      debugMoney: false,
       horn: false,
       crouch: false,
       fire: false,

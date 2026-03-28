@@ -2319,6 +2319,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       if (input.debugDamage) {
         damagePlayer(18);
       }
+
+      if (input.debugMoney) {
+        money += 200;
+      }
     } else {
       weapons.update(dt, input, {
         playerMode,
