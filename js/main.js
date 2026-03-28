@@ -29,6 +29,8 @@ const moneyEl = document.querySelector("#money");
 const statusEl = document.querySelector("#status");
 const cameraModeEl = document.querySelector("#camera-mode");
 const gameOverEl = document.querySelector("#game-over");
+const roadDriverMenuEl = document.querySelector("#road-driver-menu");
+const roadDriverHintEl = document.querySelector("#road-driver-hint");
 const editorPanelEl = document.querySelector("#editor-panel");
 const editorPaletteEl = document.querySelector("#editor-palette");
 const editorSelectedLabelEl = document.querySelector("#editor-selected-label");
@@ -128,6 +130,8 @@ const camera = new THREE.PerspectiveCamera(
 const clock = new THREE.Clock();
 let fpsSmoothed = 0;
 let inventoryMenuOpen = false;
+let roadDriverMenuOpen = false;
+let settingsOpen = false;
 let lastPlayerMode = "driving";
 let draggedInventorySlotIndex = null;
 let crosshairAnimTime = 0;
@@ -414,6 +418,30 @@ function applyWeaponVolume(volume, persist = true) {
   }
 }
 
+function updateRoadDriverMenu() {
+  roadDriverMenuEl?.classList.toggle("hidden", !roadDriverMenuOpen);
+  if (roadDriverHintEl) {
+    roadDriverHintEl.textContent = roadDriverMenuOpen
+      ? "Tab para ocultar Road Driver"
+      : "Tab para desplegar Road Driver";
+  }
+}
+
+function setSettingsOpen(nextOpen) {
+  settingsOpen = !!nextOpen;
+  cameraSettingsPanelEl.classList.toggle("hidden", !settingsOpen);
+  document.body.classList.toggle("settings-open", settingsOpen);
+
+  if (settingsOpen) {
+    inventoryMenuOpen = false;
+    clearInventoryDragState();
+    clearMomentaryInputs();
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+  }
+}
+
 function setupCameraSettingsPanel() {
   const saved = readSavedSettings();
   const defaults = cameraController.getSettings();
@@ -449,7 +477,7 @@ function setupCameraSettingsPanel() {
   });
 
   settingsToggleEl.addEventListener("click", () => {
-    cameraSettingsPanelEl.classList.toggle("hidden");
+    setSettingsOpen(!settingsOpen);
   });
 }
 
@@ -632,7 +660,7 @@ function updatePrompt(state) {
 
 function updateCrosshair(state) {
   const sniperScopeActive = isSniperScopeActive(state);
-  if (editor.isActive()) {
+  if (editor.isActive() || settingsOpen) {
     crosshairEl.classList.add("hidden");
     document.body.style.cursor = "default";
     return;
@@ -709,10 +737,6 @@ function updateSniperScope(state) {
   sniperScopeEl?.classList.toggle("active", active);
   if (sniperScopeZoomEl) {
     sniperScopeZoomEl.textContent = getSniperScopeZoomLabel(state);
-  }
-  settingsToggleEl.classList.toggle("hidden", active);
-  if (active) {
-    cameraSettingsPanelEl.classList.add("hidden");
   }
 }
 
@@ -843,6 +867,9 @@ function updateMissionUI(state) {
 }
 
 function updateWeaponUI(state) {
+  
+  updateSniperScope(state);
+  return;
   const weapon = state.weaponHud;
 
   weaponNameEl.textContent = weapon.equippedLabel;
@@ -1345,6 +1372,7 @@ function updateOverlayVisibility() {
   document.body.classList.toggle("phone-active", overlayOpen);
 
   if (overlayOpen) {
+    setSettingsOpen(false);
     clearMomentaryInputs();
     if (document.pointerLockElement) {
       document.exitPointerLock?.();
@@ -1492,6 +1520,23 @@ function animate() {
   fpsSmoothed += (currentFps - fpsSmoothed) * 0.12;
   crosshairAnimTime += dt;
 
+  if (input.toggleRoadDriverMenu) {
+    roadDriverMenuOpen = !roadDriverMenuOpen;
+    updateRoadDriverMenu();
+    input.toggleRoadDriverMenu = false;
+  }
+
+  if (input.toggleSettings) {
+    if (phoneOpen) {
+      setPhoneOpen(false);
+    } else if (dealerBrowserOpen) {
+      setDealerBrowserOpen(false);
+    } else if (!editor.isActive()) {
+      setSettingsOpen(!settingsOpen);
+    }
+    input.toggleSettings = false;
+  }
+
   if (editor.consumeToggleRequested()) {
     if (editor.isActive()) {
       editor.exit();
@@ -1501,6 +1546,7 @@ function animate() {
   }
 
   if (editor.isActive()) {
+    setSettingsOpen(false);
     if (phoneOpen) {
       setPhoneOpen(false);
     }
@@ -1514,6 +1560,23 @@ function animate() {
     input.toggleInventory = false;
     input.horn = false;
     editor.update(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (settingsOpen) {
+    input.restart = false;
+    input.toggleNight = false;
+    input.toggleFirstPerson = false;
+    input.togglePhone = false;
+    input.toggleInventory = false;
+    input.horn = false;
+    clearMomentaryInputs();
+    cameraController.setPointerLockBlocked(true);
+    cameraController.setAimDownSights(false);
+    if (latestGameState) {
+      updateUI(latestGameState);
+    }
     renderer.render(scene, camera);
     return;
   }
@@ -1558,7 +1621,9 @@ function animate() {
   }
   input.toggleInventory = false;
 
-  cameraController.setPointerLockBlocked(inventoryMenuOpen && cameraController.isFirstPerson());
+  cameraController.setPointerLockBlocked(
+    (inventoryMenuOpen || settingsOpen) && cameraController.isFirstPerson()
+  );
   cameraController.setAimDownSights(
     !inventoryMenuOpen &&
     !editor.isActive() &&
@@ -1665,6 +1730,8 @@ window.addEventListener("resize", () => {
 initMinimap();
 setupCameraSettingsPanel();
 setupPhoneUI();
+updateRoadDriverMenu();
+setSettingsOpen(false);
 updateOverlayVisibility();
 restartGame();
 animate();

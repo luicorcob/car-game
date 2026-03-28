@@ -10,6 +10,8 @@ export function createInput() {
     toggleNight: false,
     toggleFirstPerson: false,
     togglePhone: false,
+    toggleRoadDriverMenu: false,
+    toggleSettings: false,
     jump: false,
     sprint: false,
     debugDamage: false,
@@ -43,7 +45,6 @@ export function createInput() {
     ShiftLeft: "sprint",
     ShiftRight: "sprint",
     KeyC: "crouch",
-
     KeyQ: "shopPrev",
     KeyF: "shopNext",
     Digit1: "selectWeapon1",
@@ -86,7 +87,23 @@ export function createInput() {
   window.addEventListener("keydown", (event) => {
     if (isTypingTarget(event.target)) return;
 
-    if (event.key === "¡" || event.code === "Backquote") {
+    if (event.code === "Tab") {
+      event.preventDefault();
+      if (!event.repeat) {
+        input.toggleRoadDriverMenu = true;
+      }
+      return;
+    }
+
+    if (event.code === "Escape") {
+      event.preventDefault();
+      if (!event.repeat) {
+        input.toggleSettings = true;
+      }
+      return;
+    }
+
+    if (event.key === "¡") {
       if (!event.repeat) {
         pulse("debugDamage");
       }
@@ -116,7 +133,11 @@ export function createInput() {
 
     if (event.code === "KeyP") {
       if (!event.repeat) {
-        input.togglePhone = true;}}
+        input.togglePhone = true;
+      }
+      return;
+    }
+
     if (event.code === "KeyI") {
       if (!event.repeat) {
         input.toggleInventory = true;
@@ -128,16 +149,15 @@ export function createInput() {
   });
 
   window.addEventListener("keyup", (event) => {
-
     if (
       event.code === "KeyN" ||
       event.code === "KeyV" ||
       event.code === "KeyI" ||
       event.code === "KeyP" ||
-      event.code === "KeyH"
+      event.code === "KeyH" ||
+      event.code === "Tab" ||
+      event.code === "Escape"
     ) return;
-
-
 
     setKey(event.code, false);
   });
@@ -176,10 +196,17 @@ export function createInput() {
 
   window.addEventListener("blur", () => {
     for (const key of Object.keys(input)) {
+      if (
+        key === "toggleNight" ||
+        key === "toggleFirstPerson" ||
+        key === "togglePhone" ||
+        key === "toggleInventory" ||
+        key === "toggleRoadDriverMenu" ||
+        key === "toggleSettings"
+      ) {
+        continue;
+      }
 
-      if (key === "toggleNight" || key === "toggleFirstPerson" || key === "togglePhone" || key === "toggleInventory") continue;
-
-     
       input[key] = false;
     }
   });

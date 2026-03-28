@@ -193,6 +193,35 @@ body {
   max-width: 500px;
 }
 
+#road-driver-menu {
+  position: fixed;
+  top: 148px;
+  right: 18px;
+  left: auto;
+  width: min(420px, calc(100vw - 36px));
+  z-index: 12;
+  pointer-events: auto;
+}
+
+.road-driver-hint {
+  position: fixed;
+  right: 18px;
+  top: 108px;
+  left: auto;
+  z-index: 12;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(10, 14, 28, 0.82);
+  color: rgba(243, 246, 255, 0.92);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
 .info h1,
 .info p,
 .game-over h2,
@@ -385,6 +414,7 @@ body {
 }
 
 .weapon-card {
+  display: none;
   position: fixed;
   left: 18px;
   bottom: 240px;
@@ -2220,30 +2250,21 @@ body {
 }
 
 .settings-toggle {
-  position: fixed;
-  right: 18px;
-  top: 220px;
-  z-index: 10;
-  appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  background: rgba(10, 14, 28, 0.84);
-  color: var(--text);
-  font: inherit;
-  font-weight: 800;
-  padding: 8px 12px;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
+  display: none;
 }
 
 .camera-settings {
   position: fixed;
-  right: 18px;
-  top: 270px;
-  width: 300px;
-  z-index: 9;
+  left: 50%;
+  top: 50%;
+  width: min(420px, calc(100vw - 32px));
+  transform: translate(-50%, -50%);
+  z-index: 40;
   pointer-events: auto;
-  padding: 12px 14px;
+  padding: 18px 18px 16px;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 9999px rgba(3, 7, 18, 0.5);
 }
 
 .camera-settings-kicker {
