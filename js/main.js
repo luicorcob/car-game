@@ -1249,6 +1249,7 @@ function updateUI(state) {
     previousMoneyValue = state.money;
   } else if (state.money > previousMoneyValue) {
     showMoneyGainPopup(state.money - previousMoneyValue);
+    game.playMoneySound();
     previousMoneyValue = state.money;
   } else if (state.money !== previousMoneyValue) {
     previousMoneyValue = state.money;
