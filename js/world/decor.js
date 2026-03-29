@@ -672,21 +672,21 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
     }
   }
 
-  function updateDecorations(dt, context = null) {
+  function updateDecorations(dt, context = null, quality = null) {
     const playerPose = context?.playerPose ?? null;
     const view = buildViewContext(context);
 
-    const maxBuildingDistance = CONFIG.world.cullDistanceBuildings ?? 520;
-    const maxParkedDistance = CONFIG.world.cullDistanceParkedCars ?? 320;
-    const maxPedDistance = CONFIG.world.cullDistancePedestrians ?? 240;
+    const maxBuildingDistance = quality?.cullDistanceBuildings ?? CONFIG.world.cullDistanceBuildings ?? 520;
+    const maxParkedDistance = quality?.cullDistanceParkedCars ?? CONFIG.world.cullDistanceParkedCars ?? 320;
+    const maxPedDistance = quality?.cullDistancePedestrians ?? CONFIG.world.cullDistancePedestrians ?? 240;
     if (shouldRefreshStaticVisibility(view, dt)) {
       refreshStaticVisibility(view, maxBuildingDistance, maxParkedDistance, maxPedDistance);
       rememberStaticCullView(view);
     }
 
-    const nearDist = CONFIG.world.pedestrianNearUpdateDistance ?? 90;
-    const midDist = CONFIG.world.pedestrianMidUpdateDistance ?? 170;
-    const farStep = CONFIG.world.pedestrianFarStepSeconds ?? 0.24;
+    const nearDist = quality?.pedestrianNearUpdateDistance ?? CONFIG.world.pedestrianNearUpdateDistance ?? 90;
+    const midDist = quality?.pedestrianMidUpdateDistance ?? CONFIG.world.pedestrianMidUpdateDistance ?? 170;
+    const farStep = quality?.pedestrianFarStepSeconds ?? CONFIG.world.pedestrianFarStepSeconds ?? 0.24;
 
     for (const ped of movingPedestrians) {
       if (!ped.alive) continue;

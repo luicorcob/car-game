@@ -154,15 +154,15 @@ export const CONFIG = {
 
   world: {
     grassSize: 2400,
-    fogNear: 140,
-    fogFar: 1200,
+    fogNear: 115,
+    fogFar: 760,
     cullFovPaddingRad: 0.6,
-    cullDistanceBuildings: 520,
-    cullDistanceParkedCars: 320,
-    cullDistancePedestrians: 240,
-    pedestrianNearUpdateDistance: 90,
-    pedestrianMidUpdateDistance: 170,
-    pedestrianFarStepSeconds: 0.24
+    cullDistanceBuildings: 360,
+    cullDistanceParkedCars: 210,
+    cullDistancePedestrians: 150,
+    pedestrianNearUpdateDistance: 68,
+    pedestrianMidUpdateDistance: 120,
+    pedestrianFarStepSeconds: 0.36
   },
 
   decor: {

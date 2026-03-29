@@ -42,6 +42,17 @@ function addStaticRoadNetwork(scene, graph) {
 export function createWorld(scene) {
   const lighting = createWorldLighting(scene);
   const graph = createWorldGraph();
+  let qualityPreset = "high";
+  const qualityState = {
+    fogNear: CONFIG.world.fogNear,
+    fogFar: CONFIG.world.fogFar,
+    cullDistanceBuildings: CONFIG.world.cullDistanceBuildings,
+    cullDistanceParkedCars: CONFIG.world.cullDistanceParkedCars,
+    cullDistancePedestrians: CONFIG.world.cullDistancePedestrians,
+    pedestrianNearUpdateDistance: CONFIG.world.pedestrianNearUpdateDistance,
+    pedestrianMidUpdateDistance: CONFIG.world.pedestrianMidUpdateDistance,
+    pedestrianFarStepSeconds: CONFIG.world.pedestrianFarStepSeconds
+  };
 
   const boxColliders = [];
   const circleColliders = [];
@@ -352,6 +363,21 @@ export function createWorld(scene) {
     deliveryHouses.update(dt);
   }
 
+  function setQualityPreset(nextPreset, profile = {}) {
+    qualityPreset = nextPreset ?? "high";
+    Object.assign(qualityState, {
+      fogNear: profile.fogNear ?? qualityState.fogNear,
+      fogFar: profile.fogFar ?? qualityState.fogFar,
+      cullDistanceBuildings: profile.cullDistanceBuildings ?? qualityState.cullDistanceBuildings,
+      cullDistanceParkedCars: profile.cullDistanceParkedCars ?? qualityState.cullDistanceParkedCars,
+      cullDistancePedestrians: profile.cullDistancePedestrians ?? qualityState.cullDistancePedestrians,
+      pedestrianNearUpdateDistance: profile.pedestrianNearUpdateDistance ?? qualityState.pedestrianNearUpdateDistance,
+      pedestrianMidUpdateDistance: profile.pedestrianMidUpdateDistance ?? qualityState.pedestrianMidUpdateDistance,
+      pedestrianFarStepSeconds: profile.pedestrianFarStepSeconds ?? qualityState.pedestrianFarStepSeconds
+    });
+    lighting.setRenderProfile?.(qualityState);
+  }
+
   function removeEditorObject(object) {
     if (!object) return false;
 
@@ -398,11 +424,16 @@ export function createWorld(scene) {
     resolveCharacterMotion,
 
     updateChoiceSigns: signs.updateChoiceSigns,
-    updateDecorations: (dt, context = null) => decor.updateDecorations(dt, context),
+    updateDecorations: (dt, context = null) => {
+      lighting.update?.(dt);
+      return decor.updateDecorations(dt, context, qualityState);
+    },
     updateInteractivePlaces,
 
     setNightMode: lighting.setNightMode,
     isNightMode: lighting.isNightMode,
+    setQualityPreset,
+    getQualityPreset: () => qualityPreset,
 
     getGasStationAccess: gasStations.getAvailableAccess,
     createGasStationEntrySegment: gasStations.createEntrySegment,

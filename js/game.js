@@ -567,7 +567,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       if (distSq > 2.6 * 2.6) continue;
 
       money += pickup.amount;
-      weaponSounds.play("money");
       scene.remove(pickup.group);
       moneyPickups.splice(i, 1);
     }
@@ -2692,11 +2691,16 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     return weaponSoundVolume;
   }
 
+  function playMoneySound() {
+    weaponSounds.play("money");
+  }
+
   return {
     reset,
     update,
     requestTaxiPickup,
     moveInventorySlot,
+    playMoneySound,
     setWeaponSoundVolume,
     getWeaponSoundVolume
   };
