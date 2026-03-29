@@ -42,8 +42,34 @@ const TRUCK_TRAILER_COLORS = [
 
 const INVENTORY_SLOT_COUNT = 20;
 const HOTBAR_SLOT_COUNT = 5;
+const MONEY_PICKUP_MERGE_DISTANCE = 1.35;
+const MONEY_PICKUP_ANIMATE_DISTANCE = 36;
 
 const TRACER_GEOMETRY = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+const MONEY_PICKUP_GEOMETRY = new THREE.BoxGeometry(0.8, 0.26, 0.54);
+const MONEY_PICKUP_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0x4ade80,
+  emissive: 0x16a34a,
+  emissiveIntensity: 1.2,
+  roughness: 0.52,
+  metalness: 0.04
+});
+const MONEY_PICKUP_BAND_GEOMETRY = new THREE.BoxGeometry(0.14, 0.28, 0.58);
+const MONEY_PICKUP_BAND_MATERIAL = new THREE.MeshStandardMaterial({
+  color: 0xdcfce7,
+  emissive: 0x86efac,
+  emissiveIntensity: 0.3,
+  roughness: 0.62,
+  metalness: 0
+});
+const MONEY_PICKUP_GLOW_GEOMETRY = new THREE.BoxGeometry(0.96, 0.38, 0.7);
+const MONEY_PICKUP_GLOW_MATERIAL = new THREE.MeshBasicMaterial({
+  color: 0x86efac,
+  transparent: true,
+  opacity: 0.14,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false
+});
 const HOSTILE_NPC_SHOT = {
   weaponSoundId: "pistol",
   visualTracerColor: 0xff8c1a,
@@ -74,6 +100,12 @@ const WEAPON_SOUND_CONFIG = {
     volume: 0.96,
     poolSize: 4,
     trimEnd: 0.07
+  },
+  money: {
+    src: "../sounds/money.mp3",
+    volume: 0.82,
+    poolSize: 4,
+    trimEnd: 0.22
   }
 };
 
@@ -430,6 +462,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   let weaponSoundVolume = 0.5;
   const pedestrianHealth = new Map();
   const hostileNpcCooldowns = new Map();
+  const moneyPickups = [];
   const MAX_SHOT_BLOOM = 1.6;
 
   weaponSounds.setMasterVolume(weaponSoundVolume);
@@ -451,6 +484,89 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const nextHealth = Math.max(0, getPedestrianHealth(id) - amount);
     pedestrianHealth.set(id, nextHealth);
     return nextHealth;
+  }
+
+  function createMoneyPickup(amount, x, z) {
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(MONEY_PICKUP_GEOMETRY, MONEY_PICKUP_MATERIAL);
+    const band = new THREE.Mesh(MONEY_PICKUP_BAND_GEOMETRY, MONEY_PICKUP_BAND_MATERIAL);
+    const glow = new THREE.Mesh(MONEY_PICKUP_GLOW_GEOMETRY, MONEY_PICKUP_GLOW_MATERIAL);
+
+    core.castShadow = false;
+    core.receiveShadow = false;
+    band.position.y = 0.01;
+    glow.scale.set(1.04, 1.14, 1.08);
+
+    group.add(core);
+    group.add(band);
+    group.add(glow);
+    group.position.set(x, 0.72, z);
+
+    return {
+      amount,
+      group,
+      core,
+      band,
+      glow,
+      baseY: group.position.y,
+      spin: randRange(2.2, 3.6),
+      phase: randRange(0, Math.PI * 2)
+    };
+  }
+
+  function spawnMoneyPickup(x, z) {
+    const amount = Math.floor(randRange(5, 21));
+    const mergeDistanceSq = MONEY_PICKUP_MERGE_DISTANCE * MONEY_PICKUP_MERGE_DISTANCE;
+
+    for (const pickup of moneyPickups) {
+      const dx = pickup.group.position.x - x;
+      const dz = pickup.group.position.z - z;
+      if (dx * dx + dz * dz > mergeDistanceSq) continue;
+
+      pickup.amount += amount;
+      pickup.phase = randRange(0, Math.PI * 2);
+      return;
+    }
+
+    const pickup = createMoneyPickup(amount, x, z);
+    moneyPickups.push(pickup);
+    scene.add(pickup.group);
+  }
+
+  function clearMoneyPickups() {
+    for (const pickup of moneyPickups) {
+      scene.remove(pickup.group);
+    }
+    moneyPickups.length = 0;
+  }
+
+  function updateMoneyPickups(dt, activePose) {
+    if (!moneyPickups.length) return;
+    const animateDistanceSq = MONEY_PICKUP_ANIMATE_DISTANCE * MONEY_PICKUP_ANIMATE_DISTANCE;
+
+    for (let i = moneyPickups.length - 1; i >= 0; i--) {
+      const pickup = moneyPickups[i];
+      const dx = activePose ? pickup.group.position.x - activePose.x : Infinity;
+      const dz = activePose ? pickup.group.position.z - activePose.z : Infinity;
+      const distSq = dx * dx + dz * dz;
+
+      if (distSq <= animateDistanceSq) {
+        pickup.phase += dt;
+        pickup.group.rotation.y += dt * pickup.spin;
+        pickup.group.position.y = pickup.baseY + Math.sin(pickup.phase * 2.6) * 0.18;
+
+        const glowPulse = 1 + Math.sin(pickup.phase * 4.8) * 0.08;
+        pickup.glow.scale.setScalar(1.1 * glowPulse);
+      }
+
+      if (!activePose || playerMode !== "walking") continue;
+      if (distSq > 2.6 * 2.6) continue;
+
+      money += pickup.amount;
+      weaponSounds.play("money");
+      scene.remove(pickup.group);
+      moneyPickups.splice(i, 1);
+    }
   }
 
   function damagePlayer(amount) {
@@ -751,6 +867,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     traffic.length = 0;
 
     clearShotTracers();
+    clearMoneyPickups();
     destruction.reset();
     pizzaDelivery.reset();
     weapons.reset();
@@ -1774,6 +1891,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
             pedestrianHealth.delete(ped.id);
             hostileNpcCooldowns.delete(ped.id);
             deathAudio.playDeath();
+            spawnMoneyPickup(removed.x, removed.z);
             destruction.triggerPedestrianHit(
               removed,
               player.pose.heading,
@@ -1848,6 +1966,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     pedestrianHealth.delete(hit.id);
     hostileNpcCooldowns.delete(hit.id);
     deathAudio.playDeath();
+    spawnMoneyPickup(removed.x, removed.z);
 
     destruction.triggerPedestrianHit(
       removed,
@@ -2320,9 +2439,6 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         damagePlayer(18);
       }
 
-      if (input.debugMoney) {
-        money += 200;
-      }
     } else {
       weapons.update(dt, input, {
         playerMode,
@@ -2372,6 +2488,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       playerMode === "driving"
         ? (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road")
         : (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road");
+    updateMoneyPickups(dt, activePose);
     const inventorySlots = buildInventorySlots();
     const portableFuelLiters = inventory.fuelCans * inventory.fuelPerCan;
     const hotbarState = getSelectedHotbarItem();

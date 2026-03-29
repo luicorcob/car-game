@@ -263,11 +263,17 @@ body {
   color: var(--camera);
 }
 
+.money-gain-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
 .money-gain-popup {
   position: fixed;
   left: 50%;
   top: 50%;
-  z-index: 30;
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.82);

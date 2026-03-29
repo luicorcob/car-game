@@ -26,7 +26,7 @@ const canvas = document.querySelector("#game");
 const speedEl = document.querySelector("#speed");
 const scoreEl = document.querySelector("#score");
 const moneyEl = document.querySelector("#money");
-const moneyGainPopupEl = document.querySelector("#money-gain-popup");
+const moneyGainLayerEl = document.querySelector("#money-gain-layer");
 const statusEl = document.querySelector("#status");
 const cameraModeEl = document.querySelector("#camera-mode");
 const gameOverEl = document.querySelector("#game-over");
@@ -1185,14 +1185,25 @@ function updateUI(state) {
 }
 
 function showMoneyGainPopup(amount) {
-  if (!moneyGainPopupEl || amount <= 0) {
+  if (!moneyGainLayerEl || amount <= 0) {
     return;
   }
 
-  moneyGainPopupEl.textContent = `+${amount} €`;
-  moneyGainPopupEl.classList.remove("show");
-  void moneyGainPopupEl.offsetWidth;
-  moneyGainPopupEl.classList.add("show");
+  const popupEl = document.createElement("div");
+  const offsetX = (Math.random() - 0.5) * 260;
+  const offsetY = (Math.random() - 0.5) * 140;
+
+  popupEl.className = "money-gain-popup";
+  popupEl.textContent = `+${amount} €`;
+  popupEl.style.left = `calc(50% + ${offsetX.toFixed(0)}px)`;
+  popupEl.style.top = `calc(50% + ${offsetY.toFixed(0)}px)`;
+
+  moneyGainLayerEl.appendChild(popupEl);
+  void popupEl.offsetWidth;
+  popupEl.classList.add("show");
+  popupEl.addEventListener("animationend", () => {
+    popupEl.remove();
+  }, { once: true });
 }
 
 function formatPhoneMoney(amount) {
@@ -1489,7 +1500,6 @@ function restartGame() {
       jump: false,
       sprint: false,
       debugDamage: false,
-      debugMoney: false,
       horn: false,
       crouch: false,
       fire: false,
