@@ -143,6 +143,15 @@ let sniperScopeZoomIndex = 0;
 let sniperScopeForcedFirstPerson = false;
 const pedestrianHealthBarEls = new Map();
 const projectedPedPosition = new THREE.Vector3();
+const hotbarSlotUi = hotbarSlotEls.map((slotEl) => ({
+  slotEl,
+  labelEl: slotEl.querySelector(".hotbar-label"),
+  detailEl: slotEl.querySelector(".hotbar-detail")
+}));
+const inventorySlotEls = [];
+let lastMinimapRoadOriginX = Number.NaN;
+let lastMinimapRoadOriginZ = Number.NaN;
+let lastMinimapRoadHeading = Number.NaN;
 
 function isSniperScopeActive(state) {
   const weaponId = state.weaponHud?.equippedId ?? null;
@@ -199,7 +208,7 @@ function clearInventoryDragState() {
   hotbarSlotEls.forEach((slotEl) => {
     slotEl.classList.remove("dragging", "drag-over");
   });
-  inventoryMenuGridEl.querySelectorAll(".inventory-slot").forEach((slotEl) => {
+  inventorySlotEls.forEach((slotEl) => {
     slotEl.classList.remove("dragging", "drag-over");
   });
 }
@@ -248,7 +257,7 @@ function handleInventoryDragOver(event) {
     event.dataTransfer.dropEffect = "move";
   }
   hotbarSlotEls.forEach((hotbarSlotEl) => hotbarSlotEl.classList.remove("drag-over"));
-  inventoryMenuGridEl.querySelectorAll(".inventory-slot").forEach((inventorySlotEl) => {
+  inventorySlotEls.forEach((inventorySlotEl) => {
     inventorySlotEl.classList.remove("drag-over");
   });
   slotEl.classList.add("drag-over");
@@ -590,8 +599,42 @@ const navGasStationEls = gasStationInfos.map((station) =>
   createMapMarker("gas-station", station.brand, "gas-station")
 );
 
+function createInventorySlotElement(slotIndex) {
+  const slotEl = document.createElement("div");
+  const keyEl = document.createElement("div");
+  const labelEl = document.createElement("strong");
+  const detailEl = document.createElement("span");
+
+  slotEl.className = "inventory-slot empty";
+  slotEl.dataset.slotIndex = String(slotIndex);
+  slotEl.dataset.empty = "true";
+  slotEl.draggable = false;
+
+  keyEl.className = "inventory-slot-key";
+  keyEl.textContent = String(slotIndex + 1);
+  labelEl.textContent = "Vacio";
+  detailEl.textContent = "";
+
+  slotEl.append(keyEl, labelEl, detailEl);
+  inventorySlotEls.push(slotEl);
+
+  return {
+    slotEl,
+    labelEl,
+    detailEl
+  };
+}
+
+const inventorySlotUi = Array.from({ length: 15 }, (_, index) =>
+  createInventorySlotElement(index + 5)
+);
+
 function initMinimap() {
   navMapSvg.setAttribute("viewBox", `0 0 ${MAP_SIZE} ${MAP_SIZE}`);
+
+  inventoryMenuGridEl.replaceChildren(
+    ...inventorySlotUi.map(({ slotEl }) => slotEl)
+  );
 
   const roadCoords = [-2, -1, 0, 1, 2].map((v) => v * CONFIG.blockSize);
 
@@ -969,10 +1012,8 @@ function updateInventoryUI(state) {
     `Pizzas ${inventory?.pizzaBoxes ?? 0}/${inventory?.pizzaCapacity ?? 0} - Gasolina ${inventory?.portableFuelLiters ?? 0} L`;
 
   const hotbarSlots = inventory?.hotbarSlots ?? [];
-  hotbarSlotEls.forEach((slotEl, index) => {
+  hotbarSlotUi.forEach(({ slotEl, labelEl, detailEl }, index) => {
     const slot = hotbarSlots[index];
-    const labelEl = slotEl.querySelector(".hotbar-label");
-    const detailEl = slotEl.querySelector(".hotbar-detail");
 
     slotEl.dataset.slotIndex = String(index);
     slotEl.dataset.empty = slot?.empty ? "true" : "false";
@@ -988,16 +1029,16 @@ function updateInventoryUI(state) {
 
   if (draggedInventorySlotIndex === null) {
     const backpackSlots = slots.slice(5);
-    inventoryMenuGridEl.innerHTML = backpackSlots.map((slot) => {
-      const classes = [
-        "inventory-slot",
-        slot?.empty ? "empty" : "",
-        slot?.active ? "active" : ""
-      ].filter(Boolean).join(" ");
-      const slotNumber = (slot?.index ?? 0) + 1;
-      const keyMarkup = `<div class="inventory-slot-key">${slotNumber}</div>`;
-      return `<div class="${classes}" data-slot-index="${slot?.index ?? -1}" data-empty="${slot?.empty ? "true" : "false"}" draggable="${slot?.empty ? "false" : "true"}">${keyMarkup}<strong>${slot?.empty ? "Vacio" : (slot?.label ?? "Vacio")}</strong><span>${slot?.empty ? "" : (slot?.detail ?? "")}</span></div>`;
-    }).join("");
+    inventorySlotUi.forEach(({ slotEl, labelEl, detailEl }, index) => {
+      const slot = backpackSlots[index] ?? null;
+      slotEl.dataset.slotIndex = String(slot?.index ?? index + 5);
+      slotEl.dataset.empty = slot?.empty ? "true" : "false";
+      slotEl.draggable = !slot?.empty;
+      labelEl.textContent = slot?.empty ? "Vacio" : (slot?.label ?? "Vacio");
+      detailEl.textContent = slot?.empty ? "" : (slot?.detail ?? "");
+      slotEl.classList.toggle("empty", !!slot?.empty);
+      slotEl.classList.toggle("active", !!slot?.active);
+    });
   }
 
   inventoryMenuEl.classList.toggle("hidden", !walking || !inventoryMenuOpen);
@@ -1012,7 +1053,17 @@ function updateMinimap(state) {
   const originX = mapFocus.x;
   const originZ = mapFocus.z;
 
-  updateMinimapRoads(originX, originZ, mapHeading);
+  if (
+    !Number.isFinite(lastMinimapRoadOriginX) ||
+    Math.abs(originX - lastMinimapRoadOriginX) >= 1.4 ||
+    Math.abs(originZ - lastMinimapRoadOriginZ) >= 1.4 ||
+    Math.abs(normalizeAngle(mapHeading - lastMinimapRoadHeading)) >= 0.025
+  ) {
+    updateMinimapRoads(originX, originZ, mapHeading);
+    lastMinimapRoadOriginX = originX;
+    lastMinimapRoadOriginZ = originZ;
+    lastMinimapRoadHeading = mapHeading;
+  }
 
   setMarker(
     navPlayerEl,

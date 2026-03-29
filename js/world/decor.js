@@ -18,6 +18,8 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   const editorPedestrians = [];
   const parkedCars = [];
   const hostilePedestrians = [];
+  const pedestrianTargetsCache = [];
+  const hostilePedestrianTargetsCache = [];
   const viewForward = new THREE.Vector3();
   const viewForwardXZ = new THREE.Vector2();
   const cachedView = {
@@ -830,11 +832,11 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
   }
 
   function getPedestrianTargets() {
-    const targets = [];
+    pedestrianTargetsCache.length = 0;
 
     for (const ped of movingPedestrians) {
       if (!ped.alive || !ped.group.visible) continue;
-      targets.push({
+      pedestrianTargetsCache.push({
         id: ped.id,
         x: ped.group.position.x,
         y: ped.group.position.y + 2.05,
@@ -846,7 +848,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
     for (const ped of staticPedestrians) {
       if (!ped.alive || !ped.group.visible) continue;
-      targets.push({
+      pedestrianTargetsCache.push({
         id: ped.id,
         x: ped.group.position.x,
         y: ped.group.position.y + 2.05,
@@ -858,7 +860,7 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
 
     for (const ped of editorPedestrians) {
       if (!ped.alive || !ped.group.visible) continue;
-      targets.push({
+      pedestrianTargetsCache.push({
         id: ped.id,
         x: ped.group.position.x,
         y: ped.group.position.y + 2.05,
@@ -868,20 +870,25 @@ export function createWorldDecorController(scene, graph, hooks = {}) {
       });
     }
 
-    return targets;
+    return pedestrianTargetsCache;
   }
 
   function getHostilePedestrians() {
-    return hostilePedestrians
-      .filter((ped) => ped.alive)
-      .map((ped) => ({
+    hostilePedestrianTargetsCache.length = 0;
+
+    for (const ped of hostilePedestrians) {
+      if (!ped.alive) continue;
+      hostilePedestrianTargetsCache.push({
         id: ped.id,
         x: ped.group.position.x,
         y: ped.group.position.y + 1.45,
         z: ped.group.position.z,
         radius: ped.radius,
         alert: ped.alert ?? 0
-      }));
+      });
+    }
+
+    return hostilePedestrianTargetsCache;
   }
 
   function destroyPedestrian(id) {

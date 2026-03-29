@@ -421,6 +421,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
   const tracerTempMid = new THREE.Vector3();
   const tracerTempDir = new THREE.Vector3();
   const tracerUp = new THREE.Vector3(0, 1, 0);
+  const hostileShotStart = new THREE.Vector3();
+  const hostileShotEnd = new THREE.Vector3();
+  const crashForwardVector = new THREE.Vector3();
+  const pedestrianBarTargets = [];
 
   const player = {
     segment: null,
@@ -642,9 +646,9 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         continue;
       }
 
-      const start = new THREE.Vector3(npc.x, npc.y ?? 1.45, npc.z);
-      const end = new THREE.Vector3(activePose.x, targetHeight, activePose.z);
-      spawnShotTracer(start, end, HOSTILE_NPC_SHOT);
+      hostileShotStart.set(npc.x, npc.y ?? 1.45, npc.z);
+      hostileShotEnd.set(activePose.x, targetHeight, activePose.z);
+      spawnShotTracer(hostileShotStart, hostileShotEnd, HOSTILE_NPC_SHOT);
       if (HOSTILE_NPC_SHOT.weaponSoundId) {
         weaponSounds.play(HOSTILE_NPC_SHOT.weaponSoundId);
       }
@@ -1766,13 +1770,13 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       intensity: 1.05
     });
 
-    const playerForward = new THREE.Vector3(
+    const playerForward = crashForwardVector.set(
       Math.sin(player.pose.heading),
       0,
       -Math.cos(player.pose.heading)
     );
 
-    const otherForward = new THREE.Vector3(
+    const otherForward = hostileShotEnd.set(
       Math.sin(otherPose.heading),
       0,
       -Math.cos(otherPose.heading)
@@ -1804,7 +1808,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       intensity: 0.88
     });
 
-    const hitForward = new THREE.Vector3(
+    const hitForward = crashForwardVector.set(
       Math.sin(hitPose.heading),
       0,
       -Math.cos(hitPose.heading)
@@ -1943,7 +1947,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       intensity: shot.weaponId === "shotgun" ? 1.18 : 0.98
     });
 
-    const forward = new THREE.Vector3(
+    const forward = crashForwardVector.set(
       Math.sin(pose.heading),
       0,
       -Math.cos(pose.heading)
@@ -2470,19 +2474,25 @@ export function createGame(scene, playerCar, playerCharacter, world) {
     const missionState = pizzaDelivery.getState();
     const fuelRatio = player.fuel / CONFIG.fuel.max;
     const healthRatio = getPlayerHealthRatio();
-    const pedestrianBarTargets = world.getPedestrianTargets()
-      .filter((ped) => {
-        const dx = ped.x - activePose.x;
-        const dz = ped.z - activePose.z;
-        return dx * dx + dz * dz <= Math.pow(CONFIG.health.pedestrianBarDistance ?? 58, 2);
-      })
-      .map((ped) => ({
+    pedestrianBarTargets.length = 0;
+    const pedestrianBarDistance =
+      CONFIG.health.pedestrianBarDistance ?? 58;
+    const pedestrianBarDistanceSq =
+      pedestrianBarDistance * pedestrianBarDistance;
+    for (const ped of world.getPedestrianTargets()) {
+      const dx = ped.x - activePose.x;
+      const dz = ped.z - activePose.z;
+      if (dx * dx + dz * dz > pedestrianBarDistanceSq) continue;
+      pedestrianBarTargets.push({
         id: ped.id,
         x: ped.x,
         y: ped.y ?? 2.05,
         z: ped.z,
-        pct: Math.round((getPedestrianHealth(ped.id) / CONFIG.health.pedestrianMax) * 100)
-      }));
+        pct: Math.round(
+          (getPedestrianHealth(ped.id) / CONFIG.health.pedestrianMax) * 100
+        )
+      });
+    }
     const inGasStation = !!gasAccess || player.isRefueling;
     const vehicleSurface =
       playerMode === "driving"
@@ -2490,6 +2500,10 @@ export function createGame(scene, playerCar, playerCharacter, world) {
         : (world.getSurfaceType?.(player.pose.x, player.pose.z) ?? "road");
     updateMoneyPickups(dt, activePose);
     const inventorySlots = buildInventorySlots();
+    let inventoryItemCount = 0;
+    for (const slot of inventorySlots) {
+      if (slot) inventoryItemCount++;
+    }
     const portableFuelLiters = inventory.fuelCans * inventory.fuelPerCan;
     const hotbarState = getSelectedHotbarItem();
 
@@ -2606,7 +2620,7 @@ export function createGame(scene, playerCar, playerCharacter, world) {
       missionState,
       weaponHud,
       inventoryHud: {
-        itemCount: inventorySlots.filter(Boolean).length,
+        itemCount: inventoryItemCount,
         pizzaBoxes: inventory.pizzaBoxes,
         pizzaCapacity: inventory.maxPizzaBoxes,
         fuelCans: inventory.fuelCans,
