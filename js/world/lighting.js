@@ -89,6 +89,8 @@ export function createWorldLighting(scene) {
 
   let lampHeadMaterial = null;
   let nightMode = false;
+  let targetFogNear = CONFIG.world.fogNear;
+  let targetFogFar = CONFIG.world.fogFar;
 
   function applyNightState() {
     scene.background = nightMode ? nightBackground : dayBackground;
@@ -120,11 +122,24 @@ export function createWorldLighting(scene) {
     return nightMode;
   }
 
+  function setRenderProfile(profile = {}) {
+    targetFogNear = profile.fogNear ?? targetFogNear;
+    targetFogFar = profile.fogFar ?? targetFogFar;
+  }
+
+  function update(dt) {
+    const blend = 1 - Math.exp(-Math.max(0, dt) * 5.5);
+    scene.fog.near = THREE.MathUtils.lerp(scene.fog.near, targetFogNear, blend);
+    scene.fog.far = THREE.MathUtils.lerp(scene.fog.far, targetFogFar, blend);
+  }
+
   setNightMode(false);
 
   return {
     registerLampHeadMaterial,
     setNightMode,
-    isNightMode
+    isNightMode,
+    setRenderProfile,
+    update
   };
 }

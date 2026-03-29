@@ -99,6 +99,8 @@ const fpSensEl = document.querySelector("#fp-sens");
 const fpSensValueEl = document.querySelector("#fp-sens-value");
 const tpSensEl = document.querySelector("#tp-sens");
 const tpSensValueEl = document.querySelector("#tp-sens-value");
+const qualityPresetEl = document.querySelector("#quality-preset");
+const qualityPresetValueEl = document.querySelector("#quality-preset-value");
 const fpsEl = document.querySelector("#fps");
 
 const navMapTitleEl = document.querySelector("#nav-map-title");
@@ -306,6 +308,52 @@ const lookTarget = new THREE.Vector3();
 const cameraController = createCameraController(camera, lookTarget);
 const SETTINGS_KEY = "road-driver-settings-v2";
 const LEGACY_CAMERA_SETTINGS_KEY = "road-driver-camera-settings-v1";
+const QUALITY_PRESETS = {
+  "very-low": {
+    label: "Muy baja",
+    fogNear: 95,
+    fogFar: 620,
+    cullDistanceBuildings: 280,
+    cullDistanceParkedCars: 160,
+    cullDistancePedestrians: 110,
+    pedestrianNearUpdateDistance: 54,
+    pedestrianMidUpdateDistance: 92,
+    pedestrianFarStepSeconds: 0.46
+  },
+  medium: {
+    label: "Media",
+    fogNear: 110,
+    fogFar: 760,
+    cullDistanceBuildings: 360,
+    cullDistanceParkedCars: 210,
+    cullDistancePedestrians: 150,
+    pedestrianNearUpdateDistance: 68,
+    pedestrianMidUpdateDistance: 120,
+    pedestrianFarStepSeconds: 0.36
+  },
+  high: {
+    label: "Alta",
+    fogNear: 130,
+    fogFar: 980,
+    cullDistanceBuildings: 460,
+    cullDistanceParkedCars: 280,
+    cullDistancePedestrians: 210,
+    pedestrianNearUpdateDistance: 82,
+    pedestrianMidUpdateDistance: 155,
+    pedestrianFarStepSeconds: 0.28
+  },
+  ultra: {
+    label: "Ultra",
+    fogNear: 150,
+    fogFar: 1250,
+    cullDistanceBuildings: 560,
+    cullDistanceParkedCars: 340,
+    cullDistancePedestrians: 250,
+    pedestrianNearUpdateDistance: 96,
+    pedestrianMidUpdateDistance: 185,
+    pedestrianFarStepSeconds: 0.22
+  }
+};
 
 const MAP_SIZE = CONFIG.minimap.size;
 const MAP_EXTENT = CONFIG.minimap.extent;
@@ -397,7 +445,8 @@ function getCombinedSettings() {
   return {
     firstPersonSensitivity: cameraSettings.firstPersonSensitivity,
     thirdPersonTurnSensitivity: cameraSettings.thirdPersonTurnSensitivity,
-    weaponVolume: game.getWeaponSoundVolume()
+    weaponVolume: game.getWeaponSoundVolume(),
+    qualityPreset: world.getQualityPreset?.() ?? "high"
   };
 }
 
@@ -405,6 +454,12 @@ function updateSettingsUI(settings) {
   weaponVolumeEl.value = String(Math.round((settings.weaponVolume ?? 0.5) * 100));
   fpSensEl.value = String(settings.firstPersonSensitivity);
   tpSensEl.value = String(settings.thirdPersonTurnSensitivity);
+  if (qualityPresetEl) {
+    const qualityPreset = settings.qualityPreset ?? "high";
+    const qualityLabel = QUALITY_PRESETS[qualityPreset]?.label ?? QUALITY_PRESETS.high.label;
+    qualityPresetEl.value = qualityPreset;
+    qualityPresetValueEl.textContent = qualityLabel;
+  }
 
   weaponVolumeValueEl.textContent = `${Math.round((settings.weaponVolume ?? 0.5) * 100)}%`;
   fpSensValueEl.textContent = Number(settings.firstPersonSensitivity).toFixed(4);
@@ -422,6 +477,16 @@ function applyCameraSettings(nextSettings, persist = true) {
 
 function applyWeaponVolume(volume, persist = true) {
   game.setWeaponSoundVolume(volume);
+  const applied = getCombinedSettings();
+  updateSettingsUI(applied);
+  if (persist) {
+    saveSettings(applied);
+  }
+}
+
+function applyQualityPreset(presetId, persist = true) {
+  const resolvedPresetId = QUALITY_PRESETS[presetId] ? presetId : "high";
+  world.setQualityPreset?.(resolvedPresetId, QUALITY_PRESETS[resolvedPresetId]);
   const applied = getCombinedSettings();
   updateSettingsUI(applied);
   if (persist) {
@@ -457,6 +522,7 @@ function setupCameraSettingsPanel() {
   const saved = readSavedSettings();
   const defaults = cameraController.getSettings();
 
+  applyQualityPreset(saved?.qualityPreset ?? "high", false);
   applyWeaponVolume(saved?.weaponVolume ?? 0.5, false);
 
   applyCameraSettings(
@@ -481,6 +547,10 @@ function setupCameraSettingsPanel() {
     applyCameraSettings({
       thirdPersonTurnSensitivity: Number(tpSensEl.value)
     });
+  });
+
+  qualityPresetEl?.addEventListener("input", () => {
+    applyQualityPreset(qualityPresetEl.value);
   });
 
   cameraSettingsPanelEl.addEventListener("mousedown", (event) => {
